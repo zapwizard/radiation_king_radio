@@ -10,12 +10,13 @@ https://www.therpf.com/forums/threads/zaps-fallout-radiation-king-radio.304867/
 # Features
 -Simulated live radio station playback
 -Multiple virtual radio bands
+-Authentic fuzz and tuning sounds
 -Automatic parsing of folders and audio files
 -Automatic distribution of the radio stations across an analog dial
 -Cached metadata for faster handling of large libraries
 -Stereo playback
 -Analog Air Core Motor control
--Poteniometer and Rotary encoder inputs
+-Potentiometer and Rotary encoder inputs
 -Manual button activated tuning
 -Manual song skipping
 -Playback ordered or randomized stations
@@ -29,6 +30,7 @@ The audio folders first have a "radio band" folder. Think of this like AM, FM, S
 These are single folders that contain sub-folders with audio files inside. Name the folders with 00, 01, 02, etc... at the front in order to set the order of the radio bands. Empy example folders have been included.
 
 Inside each radio band folder you will place sub-folders with audio files inside. Each of these become a "Radio Station"
+See the "ZZ_test_stations" folder for an example.
 The program will only look for .OGG audio files. So you will need to convert any MP3s to OGG before using them. The OGG format was selected to make the metadata processing optomized, as well as take up less CPU. I have fourn fre:ac to be a good fast convertor.
 
 Naming the radio stations with 00, 01 , 02 etc.. will set their order on the dial. Similar naming for songs is required for ordered file playback.
