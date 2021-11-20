@@ -55,8 +55,9 @@ if settings.PI:
                                               pixel_order=neopixel_order, bit0=0b10000000)  # Raspberry Pi wiring!
         neopixel = True
         print("NeoPixels initialized")
-    except:
+    except Exception as e:
         neopixel = False
+        print ("No NeoPixels found", e)
 
     try:
         import qwiic_scmd
@@ -168,10 +169,9 @@ if settings.PI:
         @buttonshim.on_hold(buttonshim.BUTTON_C, hold_time=settings.hold_time)
         def button_c(button):
             global button_held
-            if on_off_state:
-                if active_station:
-                    active_station.randomize_station()
-                    active_station.next_song()
+            if on_off_state and active_station:
+                active_station.randomize_station()
+                active_station.next_song()
             button_held = True
 
 
@@ -568,7 +568,6 @@ def set_rotary_pixel(color=None, brightness=0.05):
 def get_radio_bands(station_folder):
     print("Starting folder search in :", station_folder)
 
-    # ['radio/dramas', 'radio/music', 'radio/new_world_radio', 'radio/test_stations']
     radio_bands = []
     for folder in sorted(os.listdir(station_folder)):
         if os.path.isdir(station_folder + folder):
@@ -857,7 +856,7 @@ def run():
 
     volume, station_num, radio_band = load_saved_settings()
 
-    select_band(0)
+    select_band(radio_band)
 
     print("******Fallout Radiation King is running with", total_station_num, "radio stations*****")
 
@@ -1069,7 +1068,7 @@ def save_settings():
     saved_ini["audio"] = {"volume": str(volume), "station": str(station_num), "band": str(radio_band)}
     with open(settings.save_file, 'w') as configfile:
         saved_ini.write(configfile)
-    print("Saved settings: volume: %s, station %s" % (volume, station_num))
+    print("Saved settings: volume: %s, station %s, band %s" % (volume, station_num, radio_band))
     print("Exiting")
 
 

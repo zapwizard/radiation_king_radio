@@ -74,8 +74,8 @@ static_volume = 6  # Smaller number means lower volume
 reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files
 
 # Tuning related:
-tuning_near = 4  # Adjusts how near you need to be to hear a station in the static while turning
-tuning_lock_on = 8  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
+tuning_near = 5  # Adjusts how near you need to be to hear a station in the static while turning
+tuning_lock_on = 10  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
 
 # Button related
 hold_time = 1
