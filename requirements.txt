@@ -1,0 +1,11 @@
+# sudo apt-get install git curl libsdl2-mixer-2.0-0 libsdl2-image-2.0-0 libsdl2-2.0-0
+
+pygame~=2.0.1
+mutagen~=1.45.1
+
+rpi_ws281x
+adafruit-circuitpython-neopixel
+adafruit-blinka
+
+buttonshim~=0.0.2
+adafruit-circuitpython-seesaw

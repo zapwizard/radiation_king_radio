@@ -1,1 +1,5 @@
-*.skb
+/_gsdata_/
+/__pycache__/
+/test_code/
+/venv/
+*.pyc
