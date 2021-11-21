@@ -718,6 +718,7 @@ def tuning():
 
     # Play at volume with no static when needle is close to station position
     if range_to_station <= lock_on_tolerance:
+        tuning_volume = volume
         if not tuning_locked:
             if active_station:
                 print("Locked to station #", nearest_station_num, "at angle:", station_position, "Needle=",
@@ -725,14 +726,13 @@ def tuning():
                 pygame.mixer.music.set_volume(volume)
             if pygame.mixer.Channel(1).get_busy():
                 pygame.mixer.Channel(1).stop()
-            tuning_volume = volume
             tuning_locked = True
             if neopixels:
                 neopixels.fill((0, 0, 0, settings.neo_pixel_default))
 
     # Start playing audio with static when the needle get near a station position
-    elif range_to_station <=  round(tuning_sensitivity / settings.tuning_near, 3):
-        tuning_volume = volume / ((range_to_station / settings.tuning_near) * 2)
+    elif range_to_station <= round(tuning_sensitivity / settings.tuning_near, 3):
+        tuning_volume = round(volume / range_to_station, 3)
         pygame.mixer.music.set_volume(tuning_volume)
         if neopixels:
             neopixels.fill((0, 0, 0, settings.neo_pixel_default - 1))
@@ -757,7 +757,6 @@ def tuning():
             active_station.stop()
             pygame.mixer.music.stop()
             active_station = None
-            tuning_volume = volume / settings.tuning_near
             tuning_locked = False
         if not pygame.mixer.Channel(1).get_busy():
             random_snd = random.randrange(0, len(static_sounds) - 1)
@@ -1012,11 +1011,12 @@ class Radiostation:
                       )
 
                 pygame.mixer.music.load(song)
-                pygame.mixer.music.set_volume(float(tuning_volume))
+                pygame.mixer.music.set_volume(tuning_volume)
                 try:
                     pygame.mixer.music.play(0, self.start_pos)
                 except:
                     pygame.mixer.music.play(0, 0)
+
                 self.state = self.STATES['playing']
 
     def play(self):
