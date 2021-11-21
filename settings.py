@@ -53,6 +53,9 @@ if PI:
     neopixel_number = 5
     neopixel_brightness = 0.1
 
+neo_pixel_default = 150  # Default brightness
+
+
 # Stepper motor related:
 if PI:
     import digitalio
@@ -74,8 +77,9 @@ static_volume = 6  # Smaller number means lower volume
 reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files
 
 # Tuning related:
-tuning_near = 5  # Adjusts how near you need to be to hear a station in the static while turning
+tuning_near = 5 # Adjusts how near you need to be to hear a station in the static while turning
 tuning_lock_on = 10  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
+band_change_volume = 1 # How loud the band changing sound effect is played (Divisor of current volume)
 
 # Button related
 hold_time = 1
@@ -89,10 +93,10 @@ volume_step = 0.02
 
 # ADC related:
 ADC_Samples = 3  # More samples means more smoothing, but slower response
-ADC_0_Min = 10  # Deliberately a bit high to allow for auto-calibration
-ADC_0_Max = 200   # Deliberately a bit low to allow for auto-calibration
+ADC_0_Min = 10  # Deliberately a high to allow for auto-calibration
+ADC_0_Max = 150   # Deliberately a low to allow for auto-calibration
 ADC_1_Min = 10
-ADC_1_Max = 200
+ADC_1_Max = 150
 
 # Air Core Motor Related:
 max_pwm_resolution = 255
@@ -104,5 +108,4 @@ backward = 1
 motor_min_angle = 0
 motor_max_angle = 180
 motor_steps = motor_max_angle - motor_min_angle
-
 

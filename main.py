@@ -277,7 +277,7 @@ pygame.display.set_mode((1, 1))
 pygame.init()
 
 # Reserve a sound channel for static sounds
-print("Loading static sounds")
+print("Loading static sounds (Ignore the underrun errors)")
 pygame.mixer.set_reserved(1)
 pygame.mixer.Channel(1)
 
@@ -459,28 +459,35 @@ def set_volume_level(volume_level, direction=None, step=None):
 
 
 def on_off():
-    global on_off_state
+    global on_off_state, motor_angle
     if on_off_state:
         on_off_state = False
         if active_station:
             active_station.stop()
+        pygame.mixer.Channel(1).stop()
+        snd_off = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_Off.ogg")
+        snd_off.play()
         if neopixels:
             neopixels.fill((0, 0, 0, 0))
         if rotary:
             set_rotary_pixel(32, 0.1)
-        pygame.mixer.Channel(1).stop()
-        snd_off = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_Off.ogg")
-        snd_off.play()
+        save_settings()
         print("Going into standby")
     else:
         on_off_state = True
         snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
         snd_on.play()
+        previous_motor_angle = motor_angle
+        for angle in range(settings.motor_min_angle, settings.motor_max_angle):
+            Set_motor(angle)
+            time.sleep(0.001)
+        time.sleep(0.5)
+        Set_motor(previous_motor_angle)
         tuning()
         if active_station:
             active_station.play_song()
         if neopixels:
-            neopixels.fill((0, 0, 0, 20))
+            neopixels.fill((0, 0, 0, settings.neo_pixel_default))
         if rotary:
             set_rotary_pixel(None)
         print("Resume from standby")
@@ -510,7 +517,7 @@ def handle_event(event):
             active_station.files.rotate(-1)
             active_station.song_lengths.rotate(-1)
             active_station.play_song(False)
-            print("Song ended, Playing next song")
+            # print("Song ended, Playing next song")
     elif event.type == settings.EVENTS['PLAYPAUSE']:
         print("Play / Pause")
         active_station.pause_play()
@@ -575,7 +582,7 @@ def get_radio_bands(station_folder):
             sub_radio_bands = []
             for sub_folder in sorted(os.listdir(station_folder + folder)):  # Search root audio folders for sub-folders
                 path = os.path.join(station_folder, folder, sub_folder)
-                if os.path.isdir(os.path.join(path)):
+                if os.path.isdir(path):
                     # print("Starting song search in folder:", path)
                     if len(glob.glob(path + "/*.ogg")) == 0:
                         print("WARNING: No .ogg files in:", sub_folder)
@@ -595,7 +602,7 @@ def get_radio_bands(station_folder):
                         if station_ini_parser.has_section("metadata"):
                             station_name = station_ini_parser.get('metadata', 'station_name')
                             station_ordered = eval(station_ini_parser.get('metadata', 'ordered'))
-                            print("Loading station:", station_name, "Ordered =", station_ordered)
+                            # print("Loading station:", station_name, "Ordered =", station_ordered)
                         else:
                             print("Could not find a [metadata] section in:", station_meta_data_file)
                             station_name = folder
@@ -609,15 +616,23 @@ def get_radio_bands(station_folder):
                             print("Loaded cached station data from", station_meta_data_file)
                         except Exception as error:
                             print(str(error), "Could not read cache file in", station_meta_data_file)
+                        try:
+                            if not eval(str(station_data[3])):  # Randomized cached stations
+                                seed = random.random()
+                                random.Random(seed).shuffle(station_data[2])  # station_files
+                                random.Random(seed).shuffle(station_data[4])  # station_lengths
+                                # print("randomizing", folder)
+                        except Exception as error:
+                            print(str(error), "station_data[3]=",station_data[3])
                     else:
                         station_files = []
                         station_lengths = []
 
                         for song_file in sorted(os.listdir(path)):
                             if song_file.endswith(".ogg"):
-                                station_files.append("./" + path + "/" + song_file)
+                                station_files.append(os.path.join(path, song_file))
                                 try:
-                                    station_lengths.append(mutagen.File("./" + path + "/" + song_file).info.length)
+                                    station_lengths.append(mutagen.File(os.path.join(path, song_file)).info.length)
                                 except Exception as error:
                                     print("Mutagen error:", str(error), "in file", song_file)
                         total_length = sum(station_lengths)
@@ -653,8 +668,10 @@ def get_radio_bands(station_folder):
                                 station_ini_file.close()
                             except Exception as error:
                                 print("Failed to save cache to", station_meta_data_file, "/", str(error))
-                    sub_radio_bands.append(station_data)
-        radio_bands.append(sub_radio_bands)
+                    if len(station_data) > 0:
+                        sub_radio_bands.append(station_data)
+        if len(sub_radio_bands) > 0:
+            radio_bands.append(sub_radio_bands)
     return radio_bands
 
 
@@ -698,7 +715,9 @@ def tuning():
     range_to_station = abs(station_position - motor_angle)
 
     lock_on_tolerance = round(tuning_sensitivity / settings.tuning_lock_on, 3)
-    if range_to_station <= lock_on_tolerance:  # Play at volume with no static when needle is close to station position
+
+    # Play at volume with no static when needle is close to station position
+    if range_to_station <= lock_on_tolerance:
         if not tuning_locked:
             if active_station:
                 print("Locked to station #", nearest_station_num, "at angle:", station_position, "Needle=",
@@ -708,24 +727,31 @@ def tuning():
                 pygame.mixer.Channel(1).stop()
             tuning_volume = volume
             tuning_locked = True
+            if neopixels:
+                neopixels.fill((0, 0, 0, settings.neo_pixel_default))
 
-    elif range_to_station <= tuning_sensitivity / settings.tuning_near:  # Start playing when the needle get near a station position
-        if active_station:
+    # Start playing audio with static when the needle get near a station position
+    elif range_to_station <=  round(tuning_sensitivity / settings.tuning_near, 3):
+        tuning_volume = volume / ((range_to_station / settings.tuning_near) * 2)
+        pygame.mixer.music.set_volume(tuning_volume)
+        if neopixels:
+            neopixels.fill((0, 0, 0, settings.neo_pixel_default - 1))
+        if active_station and active_station is not None:
             if not pygame.mixer.Channel(1).get_busy():
                 random_snd = random.randrange(0, len(static_sounds) - 1)
                 pygame.mixer.Channel(1).play(static_sounds[random_snd])
             pygame.mixer.Channel(1).set_volume(volume / settings.static_volume)
-            tuning_volume = volume / (range_to_station / settings.tuning_near)
-            pygame.mixer.music.set_volume(tuning_volume)
             tuning_locked = False
         else:
             print("Near station #", nearest_station_num, "at angle:", station_position, "Needle=",
-                  motor_angle, "near tolerance =", tuning_sensitivity / settings.tuning_near)
-            tuning_volume = volume / (range_to_station / settings.tuning_near)
+                  motor_angle, "near tolerance =", round(tuning_sensitivity / settings.tuning_near, 3))
             select_station(nearest_station_num, False)
 
-    else:  # Stop any music and play static if the needle is not near any station position
-        if active_station:
+    # Stop any music and play just static if the needle is not near any station position
+    else:
+        if neopixels:
+            neopixels.fill((0, 0, 0, settings.neo_pixel_default - 5))
+        if active_station and active_station is not None:
             print("No active station. Nearest station # is:", nearest_station_num, "at angle:", station_position,
                   "Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
             active_station.stop()
@@ -772,8 +798,8 @@ def prev_station():
 def next_station():
     global station_num, total_station_num
     station_num = station_num + 1
-    if station_num > total_station_num:
-        station_num = total_station_num
+    if station_num > total_station_num - 1:
+        station_num = total_station_num - 1
         print("At end of the station list", station_num, "/", total_station_num)
     else:
         print("Next station", station_num, "/", total_station_num)
@@ -782,15 +808,26 @@ def next_station():
 
 def select_band(new_band_num):
     global radio_band_list, radio_band, total_station_num, tuning_sensitivity, radio_band_total, station_list
-    global stations, motor_angle, tuning_locked, active_station
+    global stations, motor_angle, tuning_locked, active_station, volume
     if active_station:
         active_station.stop()
+    if neopixels:
+        neopixels.fill((0, 0, 0, 0))
 
     if new_band_num > radio_band_total or new_band_num < 0:
         print("Selected an invalid band number:", new_band_num, "/", radio_band_total)
     else:
         print("Changing to band number", new_band_num)
+        motor_angle_prev = motor_angle
+        Set_motor(settings.motor_min_angle)
         radio_band = new_band_num
+        snd_band = pygame.mixer.Sound("sounds/Band_Change.ogg")
+        snd_band.set_volume(volume / settings.band_change_volume)
+        snd_band.play()
+        for angle in range(settings.motor_min_angle, settings.motor_max_angle):
+            Set_motor(angle)
+            time.sleep(0.001)
+        Set_motor(motor_angle_prev)
 
     station_list = radio_band_list[new_band_num]
 
@@ -803,6 +840,8 @@ def select_band(new_band_num):
         station_folder = radio_station[1] + "/"
         station_name = radio_station[0]
         stations.append(RadioClass(station_name, station_folder, radio_station))
+    if neopixels:
+        neopixels.fill((0, 0, 0, settings.neo_pixel_default))
 
     active_station = stations[get_nearest_station(motor_angle)]
     active_station.play_song(True)
@@ -844,7 +883,7 @@ def run():
 
     if settings.PI:
         if neopixels:
-            neopixels.fill((0, 0, 0, 20))
+            neopixels.fill((0, 0, 0, settings.neo_pixel_default))
         if motor:
             print("Testing motor")
             for angle in range(settings.motor_min_angle, settings.motor_max_angle):
@@ -867,14 +906,14 @@ def run():
             if settings.PI:
                 if gpio_available:
                     check_gpio_input()
-                if rotary:
-                    check_rotary()
-                    check_rotary_button()
                 if ADC:
                     check_adc()
                     if motor:
                         Set_motor(motor_angle)
                     tuning()
+                if rotary:
+                    check_rotary()
+                    check_rotary_button()
         else:
             check_rotary_button()
         clock.tick(200)
@@ -929,7 +968,7 @@ class Radiostation:
             else:
                 if new_selection:  # If changed stations manually
                     self.start_pos = (time.time() - self.start_time)
-                    print("Time based start_pos =", round(self.start_pos, 3))
+                    # print("Time based start_pos =", round(self.start_pos, 3))
 
                     #  Subtract time until we are below the station length
                     if self.station_length and self.start_pos > self.station_length:
@@ -944,7 +983,7 @@ class Radiostation:
                         print("Start_pos longer than song length", round(self.start_pos, 3), self.song_length)
 
                         while self.start_pos > self.song_length:
-                            print("Skipping song", self.song_length)
+                            # print("Skipping song", self.song_length)
                             self.files.rotate(-1)
                             self.song_lengths.rotate(-1)
                             self.start_pos = self.start_pos - self.song_length
@@ -960,7 +999,7 @@ class Radiostation:
                         #       )
                     self.new_selection = False
                 else:
-                    print("Same station, new song")
+                    # print("Same station, new song")
                     self.start_pos = 0
                     self.start_time = time.time()
 
@@ -1014,7 +1053,7 @@ class Radiostation:
             self.last_playtime = time.time()
         settings.ACTIVE_SONG = None
         pygame.mixer.music.stop()
-        print("Music stopped")
+        # print("Music stopped")
 
     def next_song(self):
         self.files.rotate(-1)
@@ -1047,18 +1086,8 @@ class RadioClass(Radiostation):
         self.song_lengths = deque(station_data[4])
         self.total_length = station_data[5]
 
-
-@atexit.register
 def save_settings():
-    global neopixels, volume, station, neopixel
-    pygame.mixer.quit()
-    pygame.time.set_timer(settings.EVENTS['BLINK'], 0)
-    if settings.PI:
-        if buttonshim:
-            buttonshim.set_pixel(0x00, 0x00, 0x00)
-        if neopixel:
-            neopixels.fill(0)
-            myMotor.disable()
+    global volume, station, radio_band
     saved_ini = configparser.ConfigParser()
     try:
         assert os.path.exists(settings.save_file)
@@ -1069,6 +1098,18 @@ def save_settings():
     with open(settings.save_file, 'w') as configfile:
         saved_ini.write(configfile)
     print("Saved settings: volume: %s, station %s, band %s" % (volume, station_num, radio_band))
+
+@atexit.register
+def exit_script():
+    global neopixels
+    pygame.mixer.quit()
+    pygame.time.set_timer(settings.EVENTS['BLINK'], 0)
+    if settings.PI:
+        if buttonshim:
+            buttonshim.set_pixel(0x00, 0x00, 0x00)
+        if neopixel:
+            neopixels.fill(0)
+            myMotor.disable()
     print("Exiting")
 
 

@@ -35,6 +35,8 @@ The program will only look for .OGG audio files. So you will need to convert any
 
 Naming the radio stations with 00, 01 , 02 etc.. will set their order on the dial. Similar naming for songs is required for ordered file playback.
 
+There must be at least two radio stations inside a radio band folder.
+
 # Station.ini
 Each radio station folder should have a file "Station.ini". (But isn't required)
 This contains the radio station name, as well as whether the radio station should have ordered or random playback.
