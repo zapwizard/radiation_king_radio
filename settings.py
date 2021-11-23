@@ -74,12 +74,16 @@ if PI:
 stations_root_folder = "radio/"
 static_sound_folder = "sounds/Static_Chunks"
 static_volume = 6  # Smaller number means lower volume
+static_volume_min = 0.008  # Minimum static level
 reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files
+volume_step = 0.005
+volume_min = 0.008
 
 # Tuning related:
 tuning_near = 3 # Adjusts how near you need to be to hear a station in the static while turning (3 = 1/3rd the gap between stations)
 tuning_lock_on = 8  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
 band_change_volume = 1 # How loud the band changing sound effect is played (Divisor of current volume)
+effects_volume = 0.7 # How loud the on/off and other sound effects are played
 
 # Button related
 hold_time = 1
@@ -89,12 +93,12 @@ rotary_pin_a = 0
 rotary_pin_b = 5
 rotary_switch = 6
 rotary_speed = 0.2
-volume_step = 0.02
+
 
 # ADC related:
 ADC_Samples = 3  # More samples means more smoothing, but slower response
-ADC_0_Min = 0
-ADC_0_Max = 256
+ADC_0_Min = 0 # Change to a higher number to enable auto-calibration
+ADC_0_Max = 256 # Change to a lower number to enable auto-calibration
 ADC_1_Min = 10 # Deliberately a high to allow for auto-calibration
 ADC_1_Max = 150   # Deliberately a low to allow for auto-calibration
 

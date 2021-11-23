@@ -407,10 +407,10 @@ def check_adc():
                 print("New ADC_0_Max =", settings.ADC_0_Max)
 
             angle = round(expand(ADC_0_Value, settings.ADC_0_Min, settings.ADC_0_Max, settings.motor_min_angle,
-                           settings.motor_max_angle),1)
+                           settings.motor_max_angle), 1)
             if angle != ADC_0_Prev_Angle:
                 ADC_0_Prev_Angle = angle
-                motor_angle = round(angle, 3)
+                motor_angle = angle
                 print("ADC_0 Mean = ", ADC_0_Value, ADC_0_Prev_Values, angle)
                 # print("Tune position =", value, "/", settings.motor_min_angle, settings.motor_max_angle)
             ADC_0_Prev_Values = []
@@ -441,8 +441,11 @@ def check_adc():
             else:
                 ADC_0_Enabled = False
 
+def clamp(number, minimum, maximum):
+    return max(min(maximum, number), minimum)
 
 def set_volume_level(volume_level, direction=None, step=None):
+    global volume
     if direction:
         if step is None:
             step = settings.volume_step
@@ -451,16 +454,11 @@ def set_volume_level(volume_level, direction=None, step=None):
         if direction == "down":
             volume_level -= step
 
-    if volume_level > 1:
-        volume_level = 1
-    elif volume_level < 0:
-        volume_level = 0
-
-    volume_level = round(float(volume_level), 3)
+    volume = clamp(round(float(volume_level), 3), settings.volume_min, 1)
     pygame.mixer.music.set_volume(volume)
-    pygame.mixer.Channel(1).set_volume(volume / settings.static_volume)
-    # print("Volume =", volume)
-    return volume_level
+    pygame.mixer.Channel(1).set_volume(max(round(volume / settings.static_volume,3), settings.static_volume_min))
+    print("Volume =", volume, "Static_volume = ", max(round(volume / settings.static_volume,3), settings.static_volume_min))
+    return volume
 
 
 def on_off():
@@ -471,6 +469,7 @@ def on_off():
             active_station.stop()
         pygame.mixer.Channel(1).stop()
         snd_off = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_Off.ogg")
+        snd_off.set_volume(settings.effects_volume)
         snd_off.play()
         if neopixels:
             neopixels.fill((0, 0, 0, 0))
@@ -482,6 +481,7 @@ def on_off():
         on_off_state = True
 
         snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
+        snd_on.set_volume(settings.effects_volume)
         snd_on.play()
         previous_motor_angle = motor_angle
         for angle in range(settings.motor_min_angle, settings.motor_max_angle):
@@ -718,7 +718,7 @@ def play_static(play = True):
     elif play:
         random_snd = random.randrange(0, len(static_sounds) - 1)
         pygame.mixer.Channel(1).play(static_sounds[random_snd])
-        pygame.mixer.Channel(1).set_volume(volume / settings.static_volume)
+        pygame.mixer.Channel(1).set_volume(max(round(volume / settings.static_volume,3), settings.static_volume_min))
 
 def tuning():
     global motor_angle, volume, static_sounds, tuning_locked, tuning_prev_angle
@@ -887,6 +887,7 @@ def run():
     radio_band_total = len(radio_band_list) - 1
 
     snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
+    snd_on.set_volume(settings.effects_volume)
     snd_on.play()
 
     play_static()
@@ -1119,6 +1120,8 @@ def exit_script():
         if neopixel:
             neopixels.fill(0)
             myMotor.disable()
+        if rotary:
+            rotary_pixel.brightness = 0
     print("Exiting")
 
 
