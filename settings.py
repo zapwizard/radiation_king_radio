@@ -74,10 +74,12 @@ if PI:
 stations_root_folder = "radio/"
 static_sound_folder = "sounds/Static_Chunks"
 static_volume = 6  # Smaller number means lower volume
-static_volume_min = 0.008  # Minimum static level
+static_volume_min = 0.008  # Minimum static level, used to ensure some static at low volumes (Over ridden if volume is zero)
 reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files
-volume_step = 0.005
-volume_min = 0.008
+volume_step = 0.008 # 0.008 seems to be the lowest volume level possible
+volume_min = 0  # Use 0.008 if you want the radio to never be silent
+fast_forward_increment = 5  # in seconds
+rewind_increment = 5 # in seconds
 
 # Tuning related:
 tuning_near = 3 # Adjusts how near you need to be to hear a station in the static while turning (3 = 1/3rd the gap between stations)
@@ -93,7 +95,6 @@ rotary_pin_a = 0
 rotary_pin_b = 5
 rotary_switch = 6
 rotary_speed = 0.2
-
 
 # ADC related:
 ADC_Samples = 3  # More samples means more smoothing, but slower response

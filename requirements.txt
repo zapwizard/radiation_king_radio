@@ -9,3 +9,18 @@ adafruit-blinka
 
 buttonshim~=0.0.2
 adafruit-circuitpython-seesaw
+
+# Bluetooth (I never got this working with volume control, perhaps you can)
+# https://thecodeninja.net/2016/06/bluetooth-audio-receiver-a2dp-sink-with-raspberry-pi/
+# https://askubuntu.com/questions/1020257/bluez5-cannot-connect-to-a-paired-bluetooth-device-on-ubuntu-17-10
+# http://bluetooth-pentest.narod.ru/software/bluetooth_class_of_device-service_generator.html
+# https://itectec.com/ubuntu/ubuntu-bluez5-cannot-connect-to-a-paired-bluetooth-device-on-ubuntu-17-10/
+# https://gist.github.com/spmp/4be4b6c9754367cdb2da6cf60aad3da9
+# pulseaudio-module-bluetooth
+# bluez-tools
+# pybluez
+
+# https://gist.github.com/oleq/24e09112b07464acbda1
+numpy~=1.21.2
+matplotlib~=3.4.3
+PyGObject~=3.30.4

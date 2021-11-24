@@ -21,6 +21,7 @@ clock = pygame.time.Clock()
 
 neopixel = False
 volume = float(0.05)
+volume_time = time.time()
 station_num = int(0)
 station_list = []
 stations = []
@@ -96,7 +97,7 @@ if settings.PI:
         ADC_0 = AnalogIn(pcf, PCF.A0)
         ADC_1 = AnalogIn(pcf, PCF.A1)
         ADC_0_Enabled = False
-        DAC = AnalogOut(pcf, PCF.OUT)
+        # DAC = AnalogOut(pcf, PCF.OUT)
         ADC_0_Prev_Angle = 0
         ADC_0_Prev_Values = []
         ADC_0_Prev_Raw_Value = 0
@@ -106,10 +107,10 @@ if settings.PI:
         ADC_1_Prev_Raw_Value = 0
 
         ADC = True
-        DAC = True
+        # DAC = True
     except:
         ADC = False
-        DAC = False
+        # DAC = False
 
     try:
         import buttonshim
@@ -128,14 +129,15 @@ if settings.PI:
                 button_held = False
             elif on_off_state:
                 if active_station:
-                    active_station.prev_song()
+                    active_station.rewind()
 
 
         @buttonshim.on_hold(buttonshim.BUTTON_A, hold_time=settings.hold_time)
         def button_a(button):
             global button_held
             if on_off_state:
-                prev_station()
+                if active_station:
+                    active_station.prev_song()
             button_held = True
 
 
@@ -154,7 +156,8 @@ if settings.PI:
         def button_b(button):
             global button_held, volume
             if on_off_state:
-                volume = set_volume_level(volume, "down")
+                prev_station()
+                # volume = set_volume_level(volume, "down")
                 # prev_band()
             button_held = True
 
@@ -192,8 +195,9 @@ if settings.PI:
         def button_d(button):
             global button_held, volume
             if on_off_state:
+                next_station()
                 # next_band()
-                volume = set_volume_level(volume, "up")
+                # volume = set_volume_level(volume, "up")
             button_held = True
 
 
@@ -204,14 +208,16 @@ if settings.PI:
                 button_held = False
             elif on_off_state:
                 if active_station:
-                    active_station.next_song()
+                    active_station.fast_forward()
 
 
         @buttonshim.on_hold(buttonshim.BUTTON_E, hold_time=settings.hold_time)
         def button_e(button):
             global button_held
             if on_off_state:
-                next_station()
+                if active_station:
+                    active_station.next_song()
+                # next_station()
             button_held = True
 
     try:
@@ -251,7 +257,6 @@ if settings.PI:
 
         rotary_value = 0
         rotary_prev_value = 0
-        rotary_time = 0
         rotary_speed = 0.2
         rotary_pixel_color = None
 
@@ -411,7 +416,7 @@ def check_adc():
             if angle != ADC_0_Prev_Angle:
                 ADC_0_Prev_Angle = angle
                 motor_angle = angle
-                print("ADC_0 Mean = ", ADC_0_Value, ADC_0_Prev_Values, angle)
+                # print("ADC_0 Mean = ", ADC_0_Value, ADC_0_Prev_Values, angle)
                 # print("Tune position =", value, "/", settings.motor_min_angle, settings.motor_max_angle)
             ADC_0_Prev_Values = []
 
@@ -441,23 +446,35 @@ def check_adc():
             else:
                 ADC_0_Enabled = False
 
+
 def clamp(number, minimum, maximum):
     return max(min(maximum, number), minimum)
 
-def set_volume_level(volume_level, direction=None, step=None):
-    global volume
-    if direction:
-        if step is None:
-            step = settings.volume_step
-        if direction == "up":
-            volume_level += step
-        if direction == "down":
-            volume_level -= step
+
+def set_volume_level(volume_level, direction=None):
+    global volume, volume_time
+
+    # Volume level acceleration
+    if time.time() - volume_time < settings.rotary_speed:
+        step = 0.02
+    else:
+        step = settings.volume_step
+
+    if direction == "up":
+        volume_level += step
+    elif direction == "down":
+        volume_level -= step
 
     volume = clamp(round(float(volume_level), 3), settings.volume_min, 1)
     pygame.mixer.music.set_volume(volume)
-    pygame.mixer.Channel(1).set_volume(max(round(volume / settings.static_volume,3), settings.static_volume_min))
-    print("Volume =", volume, "Static_volume = ", max(round(volume / settings.static_volume,3), settings.static_volume_min))
+    if volume > 0:
+        static_volume = max(round(volume / settings.static_volume,3), settings.static_volume_min)
+    else:
+        static_volume = 0
+    pygame.mixer.Channel(1).set_volume(static_volume)
+    print("Volume =", volume, "Static_volume = ", static_volume)
+
+    volume_time = time.time()
     return volume
 
 
@@ -471,6 +488,7 @@ def on_off():
         snd_off = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_Off.ogg")
         snd_off.set_volume(settings.effects_volume)
         snd_off.play()
+        myMotor.disable()
         if neopixels:
             neopixels.fill((0, 0, 0, 0))
         if rotary:
@@ -479,17 +497,19 @@ def on_off():
         print("Going into standby")
     else:
         on_off_state = True
-
         snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
         snd_on.set_volume(settings.effects_volume)
         snd_on.play()
+        myMotor.enable()
         previous_motor_angle = motor_angle
         for angle in range(settings.motor_min_angle, settings.motor_max_angle):
+            play_static()
             Set_motor(angle)
             if neopixels:
                 neopixels.fill((0, 0, 0, round(expand(angle,settings.motor_min_angle,settings.motor_max_angle,0,settings.neo_pixel_default))))
             time.sleep(0.005)
         time.sleep(0.5)
+        play_static(False)
         Set_motor(previous_motor_angle)
         tuning()
         if active_station:
@@ -534,24 +554,17 @@ def handle_event(event):
 
 
 def check_rotary():
-    global rotary, rotary_value, rotary_time, rotary_prev_value, volume
+    global rotary, rotary_value, rotary_prev_value, volume
     rotary_value = -rotary.position
-
-    # Rotary knob acceleration
-    increment = 0.02 if time.time() - rotary_time < settings.rotary_speed else 0.2
 
     # Volume control
     if rotary_prev_value < rotary_value < 65000:
-        volume = set_volume_level(volume, "up", increment)
+        volume = set_volume_level(volume, "up")
         rotary_prev_value = rotary_value
-        # print("rotary_value=", rotary_value)
-
     elif rotary_value < rotary_prev_value and rotary_value < 65000:
-        volume = set_volume_level(volume, "down", increment)
+        volume = set_volume_level(volume, "down")
         rotary_prev_value = rotary_value
-        # print("rotary_value=", rotary_value)
-
-    rotary_time = time.time()
+    # print("rotary_value=", rotary_value)
 
 
 def check_rotary_button():
@@ -718,7 +731,10 @@ def play_static(play = True):
     elif play:
         random_snd = random.randrange(0, len(static_sounds) - 1)
         pygame.mixer.Channel(1).play(static_sounds[random_snd])
-        pygame.mixer.Channel(1).set_volume(max(round(volume / settings.static_volume,3), settings.static_volume_min))
+        if volume > 0:
+            pygame.mixer.Channel(1).set_volume(max(round(volume / settings.static_volume,3), settings.static_volume_min))
+        else:
+            pygame.mixer.Channel(1).set_volume(0)
 
 def tuning():
     global motor_angle, volume, static_sounds, tuning_locked, tuning_prev_angle
@@ -976,7 +992,7 @@ class Radiostation:
                 self.stop()
             else:
                 if new_selection:  # If changed stations manually
-                    self.start_pos = (time.time() - self.start_time)
+                    self.start_pos = max(time.time() - self.start_time, 0)
                     # print("Time based start_pos =", round(self.start_pos, 3))
 
                     #  Subtract time until we are below the station length
@@ -1086,6 +1102,19 @@ class Radiostation:
         print("Randomized song order")
 
 
+    def fast_forward(self):
+        self.start_time = self.start_time - settings.fast_forward_increment
+        if self.start_time < master_start_time:
+            master_start_time = self.start_time
+        print("Fast forward", settings.fast_forward_increment, self.start_time, master_start_time)
+        self.play_song()
+
+
+    def rewind(self):
+        self.start_time = max(self.start_time + settings.rewind_increment, master_start_time)
+        print("Rewind", settings.fast_forward_increment, self.start_time, master_start_time)
+        self.play_song()
+
 class RadioClass(Radiostation):
     def __init__(self, station_name, station_folder, station_data, *args, **kwargs):
         # self.station_data = [folder, station_name, station_files, station_ordered, station_lengths]
@@ -1112,6 +1141,7 @@ def save_settings():
 @atexit.register
 def exit_script():
     global neopixels
+    save_settings()
     pygame.mixer.quit()
     pygame.time.set_timer(settings.EVENTS['BLINK'], 0)
     if settings.PI:
@@ -1123,7 +1153,6 @@ def exit_script():
         if rotary:
             rotary_pixel.brightness = 0
     print("Exiting")
-
 
 if __name__ == "__main__":
     run()
