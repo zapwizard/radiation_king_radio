@@ -96,15 +96,18 @@ if settings.PI:
 
         ADC_0 = AnalogIn(pcf, PCF.A0)
         ADC_1 = AnalogIn(pcf, PCF.A1)
-        ADC_0_Enabled = False
+        ADC_2 = AnalogIn(pcf, PCF.A2)
+        ADC_3 = AnalogIn(pcf, PCF.A3)
+
         # DAC = AnalogOut(pcf, PCF.OUT)
         ADC_0_Prev_Angle = 0
         ADC_0_Prev_Values = []
         ADC_0_Prev_Raw_Value = 0
 
-        ADC_1_Prev_Value = 0
-        ADC_1_Prev_Values = []
-        ADC_1_Prev_Raw_Value = 0
+        ADC_2_Prev_Angle = 0
+        ADC_2_Prev_Values = []
+        ADC_2_Prev_Value = 0
+
 
         ADC = True
         # DAC = True
@@ -388,69 +391,6 @@ def blink_led():
         buttonshim.set_pixel(0x00, 0x00, 0x00)
         led_state = True
 
-
-def check_adc():
-    global volume, motor_angle
-    global ADC_0, ADC_0_Prev_Angle, ADC_0_Prev_Raw_Value, ADC_0_Prev_Values
-    global ADC_1, ADC_1_Prev_Value, ADC_1_Prev_Raw_Value, ADC_1_Prev_Values
-    global ADC_0_Enabled
-
-    # ADC_0 is used for tuning
-    ADC_0_Enabled = True  # Debug
-    if ADC_0_Enabled:
-        ADC_0_Prev_Values.append(round(ADC_0.value / 255))
-        if len(ADC_0_Prev_Values) == settings.ADC_Samples:
-            ADC_0_Value = round(mean(ADC_0_Prev_Values))
-            ADC_0_Prev_Raw_Value = ADC_0_Value
-
-            # Self calibrate min and max settings
-            if ADC_0_Value < settings.ADC_0_Min:
-                settings.ADC_0_Min = ADC_0_Value
-                print("New ADC_0_Min =", settings.ADC_0_Min)
-            if ADC_0_Value > settings.ADC_0_Max:
-                settings.ADC_0_Max = ADC_0_Value
-                print("New ADC_0_Max =", settings.ADC_0_Max)
-
-            angle = round(expand(ADC_0_Value, settings.ADC_0_Min, settings.ADC_0_Max, settings.motor_min_angle,
-                           settings.motor_max_angle), 1)
-            if angle != ADC_0_Prev_Angle:
-                ADC_0_Prev_Angle = angle
-                motor_angle = angle
-                # print("ADC_0 Mean = ", ADC_0_Value, ADC_0_Prev_Values, angle)
-                # print("Tune position =", value, "/", settings.motor_min_angle, settings.motor_max_angle)
-            ADC_0_Prev_Values = []
-
-    # ADC_1 disables ADC_0 (For digital tuning without the knob changing the station)
-    # (The ADC was just used as a convenient i2c connected GPIO)
-    ADC_1_Prev_Values.append(ADC_1.value / 255)
-    if len(ADC_1_Prev_Values) == settings.ADC_Samples:
-        ADC_1_Value = round(mean(ADC_1_Prev_Values), 1)
-        ADC_1_Prev_Raw_Value = ADC_1_Value
-        ADC_1_Value -= ADC_1_Value % -1000
-        #
-        # # Self calibrate min and max settings
-        if ADC_1_Value < settings.ADC_1_Min:
-            settings.ADC_1_Min = ADC_1_Value
-            print("New ADC_1_Min =", settings.ADC_1_Min)
-        if ADC_1_Value > settings.ADC_1_Max:
-            settings.ADC_1_Max = ADC_1_Value
-            print("New ADC_1_Max =", settings.ADC_1_Max)
-
-        ADC_1_Value = int(round(expand(ADC_1_Value, settings.ADC_1_Min, settings.ADC_1_Max, 0, 1)))
-
-        if ADC_1_Value != ADC_1_Prev_Value:
-            ADC_1_Prev_Value = ADC_1_Value
-            # print("ADC_1_Value=", value)
-            if ADC_1_Value > 32000:  # Use ADC_1 input to disable ADC_0
-                ADC_0_Enabled = True
-            else:
-                ADC_0_Enabled = False
-
-
-def clamp(number, minimum, maximum):
-    return max(min(maximum, number), minimum)
-
-
 def set_volume_level(volume_level, direction=None):
     global volume, volume_time
 
@@ -472,15 +412,104 @@ def set_volume_level(volume_level, direction=None):
     else:
         static_volume = 0
     pygame.mixer.Channel(1).set_volume(static_volume)
-    print("Volume =", volume, "Static_volume = ", static_volume)
+    # print("Volume =", volume, "Static_volume = ", static_volume)  # Debug
 
     volume_time = time.time()
     return volume
 
 
-def on_off():
-    global on_off_state, motor_angle
+def check_adc():
+    global motor_angle
+    global ADC_0, ADC_0_Prev_Angle, ADC_0_Prev_Raw_Value, ADC_0_Prev_Values
+    global ADC_2, ADC_2_Prev_Value, ADC_2_Prev_Values
+    global ADC_1, ADC_3, on_off_state
+
     if on_off_state:
+        # print("ADC_1 = ",round(ADC_1.value / 255))  # Debug
+        if round(ADC_1.value / 255) == settings.ADC_Min: # ADC_1 disables ADC_0 (For digital tuning without the knob changing the station)
+            ADC_0_Prev_Values.append(round(ADC_0.value / 255))
+            if len(ADC_0_Prev_Values) == settings.ADC_Samples:
+                adc_0_value = round(mean(ADC_0_Prev_Values))
+                ADC_0_Prev_Raw_Value = adc_0_value
+
+                angle = round(expand(adc_0_value, settings.ADC_Min, settings.ADC_Max, settings.motor_min_angle,
+                                     settings.motor_max_angle), 1)
+                if angle != ADC_0_Prev_Angle:
+                    ADC_0_Prev_Angle = angle
+                    motor_angle = angle
+                    # print("ADC_0 Mean = ", adc_0_value, ADC_0_Prev_Values, angle, round(ADC_1.value / 255))
+                    # print("Tune position =", angle, "/", settings.motor_min_angle, settings.motor_max_angle)
+                ADC_0_Prev_Values = []
+        # else:
+        #     print ("ADC_0 Disabled", round(ADC_1.value / 255))
+
+    # print("ADC_3 = ", round(ADC_3.value / 255))  # Debug
+    if round(ADC_3.value / 255) == settings.ADC_Min: # ADC_3 disables ADC_2 (For to allow for standby mode)
+        if not on_off_state:
+            resume_from_standby()
+        else:
+            ADC_2_Prev_Values.append(round(ADC_2.value / 255))
+            if len(ADC_2_Prev_Values) == settings.ADC_Samples:
+                adc_2_value = round(mean(ADC_2_Prev_Values))
+                if adc_2_value != ADC_2_Prev_Value:
+                    ADC_2_Prev_Value = adc_2_value
+                    set_volume_level(round(expand(adc_2_value, settings.ADC_Min, settings.ADC_Max, settings.volume_min, 1), 3))
+                    # print("ADC_2 Mean = ", adc_2_value, ADC_2_Prev_Values, round(ADC_3.value / 255))
+                ADC_2_Prev_Values = []
+    else:
+        # print ("ADC_2 Disabled", round(ADC_3.value / 255))
+        standby()
+
+def clamp(number, minimum, maximum):
+    return max(min(maximum, number), minimum)
+
+
+def on_off():
+    global on_off_state
+    if on_off_state:
+        standby()
+    else:
+        resume_from_standby()
+
+
+def resume_from_standby():
+    global on_off_state, motor_angle, volume
+    if not on_off_state:
+        print("Resume from standby")
+        on_off_state = True
+
+        myMotor.enable()
+        Set_motor(motor_angle)
+
+        snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
+        snd_on.set_volume(settings.effects_volume)
+        snd_on.play()
+        brightness = 0
+        if neopixels:
+            while brightness < settings.neo_pixel_default:
+                neopixels.fill((0, 0, 0, brightness))
+                brightness += 1
+                time.sleep(0.001)
+        check_adc()
+        prev_volume = volume
+        tuning()
+        if active_station:
+            active_station.play_song()
+            volume = 0
+            set_volume_level(volume)
+        while volume < prev_volume:
+            volume += settings.volume_step
+            set_volume_level(volume)
+            time.sleep(0.05)
+        play_static(False)
+        if rotary:
+            set_rotary_pixel(None)
+
+
+def standby():
+    global on_off_state
+    if on_off_state:
+        print("Going into standby")
         on_off_state = False
         if active_station:
             active_station.stop()
@@ -489,34 +518,16 @@ def on_off():
         snd_off.set_volume(settings.effects_volume)
         snd_off.play()
         myMotor.disable()
-        if neopixels:
-            neopixels.fill((0, 0, 0, 0))
         if rotary:
             set_rotary_pixel(32, 0.1)
+        if neopixels:
+            brightness = settings.neo_pixel_default
+            while brightness > 0:
+                neopixels.fill((0, 0, 0, brightness))
+                brightness -= 1
+                time.sleep(0.002)
+            neopixels.deinit()
         save_settings()
-        print("Going into standby")
-    else:
-        on_off_state = True
-        snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
-        snd_on.set_volume(settings.effects_volume)
-        snd_on.play()
-        myMotor.enable()
-        previous_motor_angle = motor_angle
-        for angle in range(settings.motor_min_angle, settings.motor_max_angle):
-            play_static()
-            Set_motor(angle)
-            if neopixels:
-                neopixels.fill((0, 0, 0, round(expand(angle,settings.motor_min_angle,settings.motor_max_angle,0,settings.neo_pixel_default))))
-            time.sleep(0.005)
-        time.sleep(0.5)
-        play_static(False)
-        Set_motor(previous_motor_angle)
-        tuning()
-        if active_station:
-            active_station.play_song()
-        if rotary:
-            set_rotary_pixel(None)
-        print("Resume from standby")
 
 
 def handle_action(action):
@@ -637,7 +648,8 @@ def get_radio_bands(station_folder):
                             print(str(error), "Could not read cache file in", station_meta_data_file)
                         try:
                             if not eval(str(station_data[3])):  # Randomized cached stations
-                                seed = random.random()
+                                # Randomized based on the nearest 10 minutes to allow two radios to sync up
+                                seed = round(time.time() / 600)
                                 random.Random(seed).shuffle(station_data[2])  # station_files
                                 random.Random(seed).shuffle(station_data[4])  # station_lengths
                                 # print("randomizing", folder)
@@ -657,7 +669,8 @@ def get_radio_bands(station_folder):
                         total_length = sum(station_lengths)
 
                         if not station_ordered:
-                            seed = random.random()
+                            # Randomized based on the nearest 10 minutes to allow two radios to sync up
+                            seed = round(time.time() / 600)
                             random.Random(seed).shuffle(station_files)
                             random.Random(seed).shuffle(station_lengths)
                             # print("randomizing", folder)
@@ -940,14 +953,17 @@ def run():
                     check_rotary()
                     check_rotary_button()
         else:
-            check_rotary_button()
+            if rotary:
+                check_rotary_button()
+            if ADC:
+                check_adc()
         clock.tick(200)
 
     try:
         pygame.mixer.quit()
         pygame.time.set_timer(settings.EVENTS['BLINK'], 0)
         if neopixel:
-            neopixels.fill((0, 0, 0, 0))
+            neopixels.deinit()
         if buttonshim:
             buttonshim.set_pixel(0x00, 0x00, 0x00)
 
@@ -1096,13 +1112,14 @@ class Radiostation:
         print("Prev song")
 
     def randomize_station(self):
-        seed = random.random()
+        seed = time.time()
         random.Random(seed).shuffle(self.files)
         random.Random(seed).shuffle(self.song_lengths)
         print("Randomized song order")
 
 
     def fast_forward(self):
+        global master_start_time
         self.start_time = self.start_time - settings.fast_forward_increment
         if self.start_time < master_start_time:
             master_start_time = self.start_time
@@ -1111,6 +1128,7 @@ class Radiostation:
 
 
     def rewind(self):
+        global master_start_time
         self.start_time = max(self.start_time + settings.rewind_increment, master_start_time)
         print("Rewind", settings.fast_forward_increment, self.start_time, master_start_time)
         self.play_song()
@@ -1148,7 +1166,8 @@ def exit_script():
         if buttonshim:
             buttonshim.set_pixel(0x00, 0x00, 0x00)
         if neopixel:
-            neopixels.fill(0)
+            neopixels.deinit()
+        if motor:
             myMotor.disable()
         if rotary:
             rotary_pixel.brightness = 0
