@@ -1,5 +1,4 @@
 import pygame
-import os
 
 save_file = "saved.ini"
 
@@ -38,43 +37,11 @@ GPIO_ACTIONS = {
     # 13: "motor_4", # Reserved for motor driver
 }
 
-# Detect if running on a Raspberry Pi
-PI = False
-if os.name == "posix":
-    PI = True
-else:
-    PI = False
-
-# NeoPixel Related
-if PI:
-    import board
-
-    neopixel_pin = board.SPI()
-    neopixel_number = 5
-    neopixel_brightness = 0.1
-
-neo_pixel_default = 150  # Default brightness
-
-
-# Stepper motor related:
-if PI:
-    import digitalio
-
-    coils = (
-        digitalio.DigitalInOut(board.D12),  # A1
-        digitalio.DigitalInOut(board.D13),  # A2
-        digitalio.DigitalInOut(board.D23),  # B1
-        digitalio.DigitalInOut(board.D24),  # B2
-    )
-
-    for coil in coils:
-        coil.direction = digitalio.Direction.OUTPUT
-
 # Music related
 reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files
 stations_root_folder = "radio/"
-static_sound_folder = "sounds/Static_Chunks"
-static_volume = 6  # Smaller number means lower volume
+static_sound_folder = "sounds/Static_Chunks"  # Place multiple static noise files here to randomize the noise
+static_volume = 4  # Divisor: Larger number means lower volume
 static_volume_min = 0.008  # Minimum static level, used to ensure some static at low volumes (Over ridden if volume is zero)
 volume_step = 0.008 # 0.008 seems to be the lowest volume level possible
 volume_min = 0.008  # Use 0.008 if you want the radio to never be silent
@@ -85,7 +52,7 @@ rewind_increment = 5 # in seconds
 tuning_near = 3 # Adjusts how near you need to be to hear a station in the static while turning (3 = 1/3rd the gap between stations)
 tuning_lock_on = 6  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
 band_change_volume = 1 # How loud the band changing sound effect is played (Divisor of current volume)
-effects_volume = 0.7 # How loud the on/off and other sound effects are played
+effects_volume = 0.8 # How loud the on/off and other sound effects are played
 
 # Button related
 hold_time = 1
@@ -111,4 +78,7 @@ backward = 1
 motor_min_angle = 0
 motor_max_angle = 180
 motor_steps = motor_max_angle - motor_min_angle
+
+# Neo Pixel Related:
+neo_pixel_default = 150  # Default brightness
 
