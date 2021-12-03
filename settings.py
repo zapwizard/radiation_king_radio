@@ -78,7 +78,9 @@ backward = 1
 motor_min_angle = 0
 motor_max_angle = 180
 motor_steps = motor_max_angle - motor_min_angle
+motor_mid_point = round((motor_max_angle - motor_min_angle)/2)
 
 # Neo Pixel Related:
-neo_pixel_default = 150  # Default brightness
+neo_pixel_default = 255  # Default brightness
+neo_pixel_time_frame = 0.003
 

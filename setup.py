@@ -81,9 +81,9 @@ if PI:
         i2c = board.I2C()
         pcf = PCF.PCF8591(i2c)
 
-        ADC_0 = AnalogIn(pcf, PCF.A0)
+        ADC_0 = AnalogIn(pcf, PCF.A0)  # Use a switched linear potentiometer for the tuning control.
         ADC_1 = AnalogIn(pcf, PCF.A1)
-        ADC_2 = AnalogIn(pcf, PCF.A2)
+        ADC_2 = AnalogIn(pcf, PCF.A2) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
         ADC_3 = AnalogIn(pcf, PCF.A3)
 
         # DAC = AnalogOut(pcf, PCF.OUT)

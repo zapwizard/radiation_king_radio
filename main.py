@@ -18,6 +18,7 @@ clock = pygame.time.Clock()
 
 volume = float(0.05)
 volume_time = time.time()
+volume_prev = float(0.0)
 station_num = int(0)
 station_list = []
 stations = []
@@ -42,6 +43,7 @@ ADC_0_Prev_Raw_Value = 0
 ADC_2_Prev_Angle = 0
 ADC_2_Prev_Values = []
 ADC_2_Prev_Value = 0
+motor_angle_prev = settings.motor_min_angle
 
 
 if setup.PI:
@@ -163,7 +165,9 @@ pygame.init()
 # Reserve a sound channel for static sounds
 print("Loading static sounds (Ignore the underrun errors)")
 pygame.mixer.set_reserved(1)
+pygame.mixer.set_reserved(2)
 pygame.mixer.Channel(1)
+pygame.mixer.Channel(2)
 
 static_sounds = {}
 i = 0
@@ -329,6 +333,14 @@ def clamp(number, minimum, maximum):
     return max(min(maximum, number), minimum)
 
 
+def set_motor_and_led(angle, brightness, increment):
+    Set_motor(angle)
+    if setup.neopixels and brightness > 0:
+        setup.neopixels.fill((0, 0, 0, brightness))
+        brightness += increment
+    time.sleep(settings.neo_pixel_time_frame)
+    return brightness
+
 def on_off():
     global on_off_state
     print ("Info: On / Off toggle called")
@@ -339,29 +351,51 @@ def on_off():
 
 
 def resume_from_standby():
-    global on_off_state, motor_angle, volume
+    global on_off_state, motor_angle, volume, motor_angle_prev, volume_prev
     if not on_off_state:
         print("Info: Resume from standby")
         on_off_state = True
 
         setup.myMotor.enable()
-        Set_motor(motor_angle)
 
         snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
         snd_on.set_volume(settings.effects_volume)
         snd_on.play()
+
+        # Make the needle move to the previous position after standby
+        brightness = 0
+        play_static(True)
+
+        # Give the lights a head start
         if setup.neopixels:
-            for brightness in range(settings.neo_pixel_default):
+            while brightness < round(settings.neo_pixel_default / 4):
+                brightness += 1
                 setup.neopixels.fill((0, 0, 0, brightness))
-                time.sleep(0.001)
+                time.sleep(settings.neo_pixel_time_frame)
+
+        # Move the motor to the previous position
+        motor_angle = motor_angle_prev
+        if motor_angle > settings.motor_mid_point:
+            for angle in range(settings.motor_mid_point, round(motor_angle)):
+                brightness = set_motor_and_led(angle, brightness, 1)
+        else:
+            for angle in range(settings.motor_mid_point, round(motor_angle), -1):
+                brightness = set_motor_and_led(angle, brightness, 1)
+
+        # Add any remaining brightness
+        if setup.neopixels:
+            while brightness < settings.neo_pixel_default:
+                    brightness += 1
+                    setup.neopixels.fill((0, 0, 0, brightness))
+                    time.sleep(settings.neo_pixel_time_frame)
         check_adc()
-        prev_volume = volume
         tuning()
+        volume_prev = volume
         if active_station:
             active_station.play_song()
             volume = 0
             set_volume_level(volume)
-        while volume < prev_volume:
+        while volume < volume_prev:
             volume += settings.volume_step
             set_volume_level(volume)
             time.sleep(0.05)
@@ -371,28 +405,42 @@ def resume_from_standby():
 
 
 def standby():
-    global on_off_state
+    global on_off_state, motor_angle, motor_angle_prev, volume, volume_prev
     if on_off_state:
         print("Info: Going into standby")
         on_off_state = False
         if active_station:
             active_station.stop()
-        play_static(False)
+        play_static(True)
         snd_off = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_Off.ogg")
-        snd_off.set_volume(settings.effects_volume)
-        snd_off.play()
-        setup.myMotor.disable()
+        pygame.mixer.Channel(2).set_volume(settings.effects_volume)
+        pygame.mixer.Channel(2).play(snd_off)
+        volume_prev = volume
         if setup.rotary:
             set_rotary_pixel(32, 0.1)
+
+        play_static(False)
+        # Make the needle sit at the midpoint while in standby
+        brightness = settings.neo_pixel_default
+        motor_angle_prev = motor_angle
+        if motor_angle < settings.motor_mid_point:
+            for angle in range(round(motor_angle), settings.motor_mid_point):
+                brightness = set_motor_and_led(angle, brightness, -1)
+        else:
+            for angle in range(round(motor_angle), settings.motor_mid_point, -1):
+                brightness = set_motor_and_led(angle, brightness, -1)
+
+        # Kill any remaining brightness
         if setup.neopixels:
-            brightness = settings.neo_pixel_default
             while brightness > 0:
                 setup.neopixels.fill((0, 0, 0, brightness))
                 brightness -= 1
                 time.sleep(0.002)
+                set_volume_level(volume)
             setup.neopixels.deinit()
-        save_settings()
 
+        save_settings()
+        setup.myMotor.disable()
 
 def handle_action(action):
     print("Action = ", action)
@@ -603,7 +651,6 @@ def get_nearest_station(angle):
 
 def play_static(play):
     global static_sounds, volume
-
     if play:
         if not pygame.mixer.Channel(1).get_busy():
             random_snd = random.randrange(0, len(static_sounds) - 1)
@@ -614,16 +661,15 @@ def play_static(play):
             else:
                 pygame.mixer.Channel(1).set_volume(0)
     else:
-    # elif pygame.mixer.Channel(1).get_busy():
         pygame.mixer.Channel(1).stop()
 
 def tuning():
     global motor_angle, volume, static_sounds, tuning_locked, tuning_prev_angle
     global active_station, tuning_volume, tuning_sensitivity
 
-    nearest_station_num = get_nearest_station(motor_angle)
-    station_position = get_station_pos(nearest_station_num)
-    range_to_station = abs(station_position - motor_angle)
+    nearest_station_num = get_nearest_station(motor_angle)  # Find the nearest radio station to the needle position
+    station_position = get_station_pos(nearest_station_num)  # Get the exact angle of that station
+    range_to_station = abs(station_position - motor_angle)  # Find the angular distance to nearest station
     lock_on_tolerance = round(tuning_sensitivity / settings.tuning_lock_on, 3)
 
     # Play at volume with no static when needle is close to station position
@@ -712,7 +758,7 @@ def next_station():
 
 def select_band(new_band_num):
     global radio_band_list, radio_band, total_station_num, tuning_sensitivity, radio_band_total, station_list
-    global stations, motor_angle, tuning_locked, active_station, volume
+    global stations, motor_angle, tuning_locked, active_station, volume, motor_angle_prev
     if active_station:
         active_station.stop()
 
@@ -724,15 +770,20 @@ def select_band(new_band_num):
         Set_motor(settings.motor_min_angle)
         radio_band = new_band_num
         snd_band = pygame.mixer.Sound("sounds/Band_Change.ogg")
-        snd_band.set_volume(volume / settings.band_change_volume)
-        snd_band.play()
+        pygame.mixer.Channel(2).play(snd_band)
+        pygame.mixer.Channel(2).set_volume(volume / settings.band_change_volume)
 
         for angle in range(settings.motor_min_angle,
                            round(map_range(new_band_num, 0, len(radio_band_list) - 1,
                                            settings.motor_min_angle, settings.motor_max_angle))):
             Set_motor(angle)
             time.sleep(0.004)
-        time.sleep(0.4)
+
+        if setup.neopixels:
+            setup.neopixels.fill((0, 0, 0, round(settings.neo_pixel_default / 2)))
+            time.sleep(0.5)
+            setup.neopixels.fill((0, 0, 0, settings.neo_pixel_default))
+        time.sleep(0.5)
         Set_motor(motor_angle_prev)
 
     station_list = radio_band_list[new_band_num]
@@ -747,8 +798,6 @@ def select_band(new_band_num):
         station_name = radio_station[0]
         stations.append(RadioClass(station_name, station_folder, radio_station))
 
-    # active_station = stations[get_nearest_station(motor_angle)]
-    # active_station.play_song(True)
     tuning()
 
 
@@ -783,8 +832,8 @@ def run():
     radio_band_total = len(radio_band_list) - 1
 
     snd_on = pygame.mixer.Sound("sounds/UI_Pipboy_Radio_On.ogg")
-    snd_on.set_volume(settings.effects_volume)
-    snd_on.play()
+    pygame.mixer.Channel(2).play(snd_on)
+    pygame.mixer.Channel(2).set_volume(settings.effects_volume)
 
     if setup.PI:
         for angle in range(settings.motor_min_angle, settings.motor_max_angle):
