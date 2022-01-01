@@ -34,14 +34,11 @@ if PI:
 
     # NeoPixel Related
     neopixel_pin = board.SPI()
-    neopixel_number = 5
-    neopixel_brightness = 0.1
     try:
         import neopixel_spi
-
         neopixel_order = neopixel_spi.GRBW  # For RGBW NeoPixels, simply change the ORDER to RGBW or GRBW.
-        neopixels = neopixel_spi.NeoPixel_SPI(neopixel_pin, neopixel_number,
-                                              brightness=neopixel_brightness, auto_write=True,
+        neopixels = neopixel_spi.NeoPixel_SPI(neopixel_pin, settings.neopixel_number,
+                                              brightness=settings.neopixel_brightness, auto_write=True,
                                               pixel_order=neopixel_order, bit0=0b10000000)  # Raspberry Pi wiring!
         neopixel = True
         neopixels.fill((0, 0, 0, round(settings.neo_pixel_default / 10)))
@@ -114,37 +111,6 @@ if PI:
         _, err, _ = sys.exc_info()
         print("GPIO UNAVAILABLE (%s)" % err, e)
         gpio_available = False
-
-    # Import i2c rotary encoder stuff
-    try:
-        from adafruit_seesaw import seesaw, neopixel, rotaryio, digitalio
-
-        try:
-            import _pixelbuf as pixel_buffer
-        except ImportError:
-            import adafruit_pypixelbuf as pixel_buffer
-
-        i2c_rotary_encoder = seesaw.Seesaw(board.I2C(), 0x36)
-
-        rotary = rotaryio.IncrementalEncoder(i2c_rotary_encoder)
-
-        i2c_rotary_encoder.pin_mode(24, i2c_rotary_encoder.INPUT_PULLUP)
-        rotary_switch = digitalio.DigitalIO(i2c_rotary_encoder, 24)
-        rotary_switch_prev = True
-
-        rotary_pixel = neopixel.NeoPixel(i2c_rotary_encoder, 6, 1)
-        rotary_pixel.brightness = 0.1
-
-        rotary_value = 0
-        rotary_prev_value = 0
-        rotary_speed = 0.2
-        rotary_pixel_color = None
-
-    except Exception as e:
-        _, err, _ = sys.exc_info()
-        print("Error: Rotary Encoder failed (%s)" % err, e)
-        rotary = None
-
 
 else:
     print("Not running on a Raspberry Pi")

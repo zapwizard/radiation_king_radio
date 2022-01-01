@@ -41,7 +41,7 @@ GPIO_ACTIONS = {
 reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files
 stations_root_folder = "radio/"
 static_sound_folder = "sounds/Static_Chunks"  # Place multiple static noise files here to randomize the noise
-static_volume = 4  # Divisor: Larger number means lower volume
+static_volume = 5  # Divisor: Larger number means lower volume
 static_volume_min = 0.008  # Minimum static level, used to ensure some static at low volumes (Over ridden if volume is zero)
 volume_step = 0.008 # 0.008 seems to be the lowest volume level possible
 volume_min = 0.008  # Use 0.008 if you want the radio to never be silent
@@ -57,12 +57,6 @@ effects_volume = 0.8 # How loud the on/off and other sound effects are played
 # Button related
 hold_time = 1
 
-# Rotary encoder related
-rotary_pin_a = 0
-rotary_pin_b = 5
-rotary_switch = 6
-rotary_speed = 0.2
-
 # ADC related:
 ADC_Samples = 2  # More samples means more smoothing, but slower response.
 ADC_Min = 0
@@ -75,12 +69,19 @@ motor_sin = 0
 motor_cos = 1
 forward = 0
 backward = 1
-motor_min_angle = 0
-motor_max_angle = 180
+motor_min_angle = 0  # Set this to zero and adjust the needle position first.
+motor_max_angle = 160
 motor_steps = motor_max_angle - motor_min_angle
 motor_mid_point = round((motor_max_angle - motor_min_angle)/2)
 
 # Neo Pixel Related:
+neopixel_number = 8
+neopixel_meter_number = 8
 neo_pixel_default = 255  # Default brightness
-neo_pixel_time_frame = 0.003
+neo_pixel_time_frame = 0.001
+neopixel_brightness = 0.1
 
+#Sound effects
+sound_off = "sounds/UI_Pipboy_Radio_Off.ogg"
+sound_on = "sounds/UI_Pipboy_Radio_On.ogg"
+sound_band_change = "sounds/Band_Change.ogg"
