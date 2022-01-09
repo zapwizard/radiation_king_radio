@@ -2,4 +2,6 @@
 /__pycache__/
 /test_code/
 /venv/
+/old_code/
 *.pyc
+/pi_pico_files/_gsdata_/
