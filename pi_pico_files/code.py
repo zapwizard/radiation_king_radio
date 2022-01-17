@@ -36,6 +36,12 @@ led_heartbeat_prev = 0
 uart_heartbeat_time = 0
 pi_zero_heartbeat_time = 0
 
+def blink_led():
+    global on_off_state
+    pico_settings.led.value = not pico_settings.led.value if on_off_state else False
+
+blink_led()
+
 def set_motor(angle, disable = False, from_uart = False):  # Set angle in degrees
     global motor_angle
 
@@ -111,10 +117,6 @@ def test_motor():
     set_motor(pico_settings.motor_max_angle)
     time.sleep(3)
 
-
-def blink_led():
-    global on_off_state
-    pico_settings.led.value = not pico_settings.led.value if on_off_state else False
 
 def check_buttons():
     button_event = pico_settings.buttons.events.get()
@@ -243,6 +245,7 @@ def wait_for_pi():
     global pi_state, pi_zero_heartbeat_time, uart_heartbeat_time
     print("Info: Waiting for pi zero heartbeat")
     while not pi_state:
+        blink_led()
         now = time.time()
         if now - uart_heartbeat_time >= pico_settings.uart_heartbeat_interval:
             uart_heartbeat_time = now
@@ -328,7 +331,7 @@ def switches():
 
 def print_serial(*args, **kwargs):
     send_uart("I", *args, **kwargs)
-print = print_serial # Override print calls and send to Pi Zero
+print = print_serial # Override print calls and send to Pi Zero. Disable this for normal USB serial output
 
 print("Startup: Pi Pico Started")
 # Wait for Pi Zero due to its slower boot up time
@@ -337,9 +340,10 @@ pico_settings.pixels.fill((0, 0, 0, round(pico_settings.led_max_brightness / 9))
 print("Startup: Waiting for on switch")
 while not switch_0_state:
     switches()
+    time.sleep(0.1)
+    blink_led()
 
 switches() # Ran twice to catch tuning knob startup setting
-
 
 resume_from_standby()
 

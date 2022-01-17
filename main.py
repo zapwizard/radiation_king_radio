@@ -132,10 +132,10 @@ def map_range(x, in_min, in_max, out_min, out_max):
 def blink_led():
     global led_state
     if led_state:
-        setup.GPIO.output(16, setup.GPIO.LOW)
+        os.system('echo 0 | sudo dd status=none of=/sys/class/leds/led0/brightness')  # led on
         led_state = False
     else:
-        setup.GPIO.output(16, setup.GPIO.HIGH)
+        os.system('echo 1 | sudo dd status=none of=/sys/class/leds/led0/brightness')  # led off
         led_state = True
 
 def set_volume_level(volume_level, direction=None):
@@ -543,7 +543,7 @@ def next_band():
 
 def wait_for_pico():
     global pico_state, heartbeat_time
-    print("Waiting for pico heartbeat")
+    print("Waiting for Pi Pico heartbeat")
     while not pico_state:
         now = time.time()
         if now - heartbeat_time > settings.heartbeat_interval:
@@ -556,7 +556,7 @@ def wait_for_pico():
                     if len(uart_message) > 1 and uart_message[1]:
                         if uart_message[1] == "1":
                             pico_state = True
-                            print("UART: pico heartbeat received")
+                            print("UART: Pi Pico heartbeat received")
             except Exception as error:
                 print("UART Error:", error)
 
