@@ -3,9 +3,6 @@
 pygame~=2.0.1
 mutagen~=1.45.1
 
-rpi_ws281x
-adafruit-circuitpython-neopixel
-adafruit-blinka
 
 buttonshim~=0.0.2
 
@@ -23,3 +20,6 @@ buttonshim~=0.0.2
 numpy~=1.21.2
 matplotlib~=3.4.3
 PyGObject~=3.30.4
+pyserial~=3.5
+pyudev
+mount # https://github.com/vallentin/mount.py

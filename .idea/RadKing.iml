@@ -7,4 +7,7 @@
     <orderEntry type="jdk" jdkName="Remote Python 3.7.3 (sftp://pi@192.168.7.177:22/usr/bin/python)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
+  <component name="PackageRequirementsSettings">
+    <option name="removeUnused" value="true" />
+  </component>
 </module>

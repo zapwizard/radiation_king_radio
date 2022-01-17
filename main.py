@@ -37,6 +37,11 @@ ADC_0_Prev_Values = []
 ADC_2_Prev_Values = []
 ADC_2_Prev_Value = 0
 motor_angle_prev = settings.motor_min_angle
+heartbeat_time = 0
+pico_state = False
+pico_heartbeat_time = 0
+
+
 
 try:
     print("State: Starting sound initialization")
@@ -60,8 +65,12 @@ pygame.init()
 print("State: Loading static sounds (Ignore the underrun errors)")
 pygame.mixer.set_reserved(1)
 pygame.mixer.set_reserved(2)
+pygame.mixer.set_reserved(3)
+pygame.mixer.set_reserved(4)
 pygame.mixer.Channel(1)
 pygame.mixer.Channel(2)
+pygame.mixer.Channel(3)
+pygame.mixer.Channel(4)
 
 snd_off = pygame.mixer.Sound(settings.sound_off)
 snd_on = pygame.mixer.Sound(settings.sound_on)
@@ -75,10 +84,12 @@ for file in sorted(os.listdir(settings.static_sound_folder)):
         i += 1
 print("Info: Loaded", len(static_sounds), "static sound files")
 
-def Set_motor(angle):  # Tell the motor controller what angle to set, used for manual tuning
+
+def set_motor(angle, manual = False):  # Tell the motor controller what angle to set, used for manual tuning
     global motor_angle
     motor_angle = angle
-    send_uart("M", motor_angle)
+    if manual:
+        send_uart("M", motor_angle)
 
 def load_saved_settings():
     saved_ini = configparser.ConfigParser()
@@ -173,6 +184,7 @@ def resume_from_standby():
         print("Info: Resume from standby")
         pygame.time.set_timer(settings.EVENTS['BLINK'], 1000)
         on_off_state = True
+        setup.uart.flushInput()
 
         send_uart("C", True) # Tell the Pi Pico we are awake
 
@@ -184,18 +196,8 @@ def resume_from_standby():
         volume_settings, station_number, radio_band_number = load_saved_settings()
         set_volume_level(volume_settings)
         select_band(radio_band_number)
-        time.sleep(1.5) # Wait for the sweep effect
-
+        print("Tuning: Loading saved station number",station_number)
         select_station(station_number, True)
-        #volume_prev = volume_settings
-        #if active_station:
-        #    active_station.live_playback()
-        #    volume_settings = 0
-        #    set_volume_level(volume_settings)
-        #while volume_settings < volume_prev:
-        #    volume_settings += settings.volume_step
-        #    set_volume_level(volume_settings)
-        #    time.sleep(0.05)
         play_static(False)
 
 
@@ -347,7 +349,7 @@ def get_station_pos(station_number):
             settings.motor_min_angle + (tuning_sensitivity / settings.tuning_near),
             settings.motor_max_angle - (tuning_sensitivity / settings.tuning_near),
         ),
-        2,
+        1,
     )
 
 
@@ -390,7 +392,7 @@ def tuning():
     nearest_station_num = get_nearest_station(motor_angle) # Find the nearest radio station to the needle position
     station_position = get_station_pos(nearest_station_num)  # Get the exact angle of that station
     range_to_station = abs(station_position - motor_angle)  # Find the angular distance to nearest station
-    lock_on_tolerance = round(tuning_sensitivity / settings.tuning_lock_on, 3)
+    lock_on_tolerance = round(tuning_sensitivity / settings.tuning_lock_on, 1)
 
     # Play at volume with no static when needle is close to station position
     if range_to_station <= lock_on_tolerance:
@@ -398,13 +400,13 @@ def tuning():
         if not tuning_locked:
             if active_station:
                 if nearest_station_num != station_num:
-                    print("Tuning: nearest_station_num",nearest_station_num,"!=",station_num)
+                    print("Tuning change: nearest_station_num",nearest_station_num,"!=",station_num)
                     select_station(nearest_station_num, True)
-                print("Tuning: Locked to station #", nearest_station_num,
-                      "at angle:", station_position,
-                      "Needle angle=", motor_angle,
-                      "Lock on tolerance=", lock_on_tolerance)
-                pygame.mixer.music.set_volume(volume)
+                    print("Tuning: Locked to station #", nearest_station_num,
+                          "at angle:", station_position,
+                          "Needle angle=", motor_angle,
+                          "Lock on tolerance=", lock_on_tolerance)
+                    pygame.mixer.music.set_volume(volume)
             play_static(False)
             tuning_locked = True
 
@@ -417,15 +419,15 @@ def tuning():
             play_static(True)
             tuning_locked = False
         else:
-            print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_position, "Needle=",
-                  motor_angle, "Near tolerance =", lock_on_tolerance)
+            #print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_position, "Needle=",
+            #      motor_angle, "Near tolerance =", lock_on_tolerance)
             select_station(nearest_station_num, False)
 
     # Stop any music and play just static if the needle is not near any station position
     else:
         if active_station and active_station is not None:
-            print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_position,
-                  "Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
+            #print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_position,
+                  #"Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
             if active_station:
                 active_station.stop()
             pygame.mixer.music.stop()
@@ -442,11 +444,7 @@ def select_station(new_station_num, manual=False):
         if manual:
             motor_angle = get_station_pos(new_station_num)
             tuning_locked = False
-            Set_motor(motor_angle)
-            send_uart("M", motor_angle)
-
-        if active_station and station_num != new_station_num:
-            active_station.stop()
+            set_motor(motor_angle, True)
 
         print("Tuning: Changing to station number", new_station_num, "at angle =", motor_angle)
         active_station = stations[new_station_num]
@@ -475,9 +473,9 @@ def next_station():
     select_station(station_num, True)
 
 
-def select_band(new_band_num):
+def select_band(new_band_num, restore_angle = None):
     global radio_band_list, radio_band, total_station_num, tuning_sensitivity, radio_band_total, station_list
-    global stations, motor_angle, tuning_locked, active_station, volume, motor_angle_prev, snd_band
+    global stations, tuning_locked, active_station, volume, snd_band
 
     if new_band_num > radio_band_total or new_band_num < 0:
         print("Tuning: Selected an invalid band number:", new_band_num, "/", radio_band_total)
@@ -488,12 +486,12 @@ def select_band(new_band_num):
         print("Tuning: Changing to band number", new_band_num)
         radio_band = new_band_num
 
-        pygame.mixer.Channel(2).play(snd_band)
-        pygame.mixer.Channel(2).set_volume(volume / settings.band_change_volume)
+        pygame.mixer.Channel(4).play(snd_band)
+        pygame.mixer.Channel(4).set_volume(volume / settings.band_change_volume)
 
         station_list = radio_band_list[new_band_num]
         total_station_num = len(station_list)
-        tuning_sensitivity = round(settings.motor_steps / total_station_num, 3)
+        tuning_sensitivity = round(settings.motor_steps / total_station_num, 1)
         print("Info: Tuning angle separation =", tuning_sensitivity, "Number of stations:", total_station_num)
 
         stations = []
@@ -502,31 +500,65 @@ def select_band(new_band_num):
             station_name = radio_station[0]
             stations.append(RadioClass(station_name, station_folder, radio_station))
 
-        led_num = round(map_range(new_band_num,0,total_station_num,settings.led_qty,0))
-        send_uart("C", "light_led", str(led_num))
+        led_num = round(map_range(new_band_num, 0, total_station_num, settings.led_qty, 0))
+        send_uart("C", "LED", str(led_num))
+        time.sleep(0.5)  # Give the and LED time to show
         send_uart("C", "Sweep")
+        sweep_done = False
+        while not sweep_done: # wait for sweep to finish
+            uart_message = receive_uart()
+            if uart_message:
+                try:
+                    if uart_message[0] == "C":
+                        if len(uart_message) > 1 and uart_message[1]:
+                            if uart_message[1] == "Sweep Done":
+                                sweep_done = True
+                                print("UART: Sweep Done", restore_angle)
+                except Exception as error:
+                    print("UART Error:", error)
+        if restore_angle:
+            set_motor(restore_angle)
 
 
 def prev_band():
-    global radio_band, radio_band_total
+    global radio_band, radio_band_total, motor_angle
     new_band = radio_band - 1
     if new_band < 0:
         radio_band = 0
         print("Tuning: At the beginning of the band list", radio_band, "/", radio_band_total)
     else:
         print("Tuning: Previous radio band", radio_band, "/", radio_band_total)
-        select_band(new_band)
+        select_band(new_band, motor_angle)
 
 
 def next_band():
-    global radio_band, radio_band_total
+    global radio_band, radio_band_total, motor_angle
     new_band = radio_band + 1
     if new_band > radio_band_total:
         radio_band = radio_band_total
         print("Tuning: At end of the band list", radio_band, "/", radio_band_total)
     else:
         print("Tuning: Next radio band", radio_band, "/", radio_band_total)
-        select_band(new_band)
+        select_band(new_band, motor_angle)
+
+def wait_for_pico():
+    global pico_state, heartbeat_time
+    print("Waiting for pico heartbeat")
+    while not pico_state:
+        now = time.time()
+        if now - heartbeat_time > settings.heartbeat_interval:
+            send_uart("H", "1")
+            heartbeat_time = now
+        uart_message = receive_uart()
+        if uart_message:
+            try:
+                if uart_message[0] == "H":
+                    if len(uart_message) > 1 and uart_message[1]:
+                        if uart_message[1] == "1":
+                            pico_state = True
+                            print("UART: pico heartbeat received")
+            except Exception as error:
+                print("UART Error:", error)
 
 def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
     if setup.uart:
@@ -538,7 +570,6 @@ def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
         except Exception as error:
             _, err, _ = sys.exc_info()
             print("UART Error: (%s)" % err, error)
-
 
 def receive_uart():
     if not setup.uart:
@@ -554,27 +585,42 @@ def receive_uart():
     except Exception as error:
         print(error)
 
+
+
+
 def run():
     global clock, on_off_state, snd_on, on_off_state, tuning_locked
-    global motor_angle, radio_band_total, radio_band_list
+    global motor_angle, radio_band_total, radio_band_list, heartbeat_time, pico_heartbeat_time, pico_state
 
     radio_band_list = get_radio_bands(settings.stations_root_folder)
     radio_band_total = len(radio_band_list) - 1
 
-    pygame.mixer.Channel(2).play(snd_on)
-    pygame.mixer.Channel(2).set_volume(settings.effects_volume)
+    wait_for_pico() # Wait for the pi pico heartbeat
 
     print("****** Radiation King Radio is now running ******")
-    resume_from_standby()
 
     while True:
+        now = time.time()
+
+        if now - pico_heartbeat_time > settings.pico_heartbeat_timeout:
+            standby()
+            wait_for_pico()
+            pico_heartbeat_time = now
+
         for event in pygame.event.get():
             handle_event(event)
         try:
             uart_message = receive_uart()
             if uart_message and len(uart_message) > 1:
-                if uart_message[0] == "I":  # Information
-                    print("UART Info:", uart_message[0], uart_message[1])
+                # Information output
+                if uart_message[0] == "I" and on_off_state:
+                    print("Pico output:",uart_message[1])
+
+                if uart_message[0] == "H":  # Heartbeat
+                    if uart_message[1] == "1":
+                        pico_heartbeat_time = now
+                        pico_state = True
+                        #print("UART: pico heartbeat received")
 
                 #Button Input
                 if uart_message[0] == "B" and on_off_state:
@@ -583,24 +629,25 @@ def run():
                     if uart_message[1] == "2":  # Button held
                         process_button_hold(uart_message)
 
-                #ADC Input
-                if uart_message[0] == "A" and on_off_state:
-                    if uart_message[1] == "0":  # ADC_0
-                        adc_0_value = float(uart_message[2])
-                        set_volume_level(round(map_range(adc_0_value,settings.ADC_Min, settings.ADC_Max,settings.volume_min, 1), 3))
-                        #print("UART: ADC_0 Value:", uart_message[2])
+                #Volume Input
+                if uart_message[0] == "V" and on_off_state:
+                    set_volume_level(float(uart_message[1]))
 
-                    if uart_message[1] == "1": #ADC 1
-                        motor_angle = float(uart_message[2])
-                        #print("UART: ADC_1 Value:", float(uart_message[2]))
+                #Motor input
+                if uart_message[0] == "M" and on_off_state:
+                    set_motor(float(uart_message[1]))
+                    tuning_locked = False
 
                 # Power State
                 if uart_message[0] == "P":
                     if uart_message[1] == "1":
-                        print("UART Info: RP2040 called resume")
-                        resume_from_standby()
+                        print("UART Info: Pi Pico called resume")
+                        if on_off_state:
+                            send_uart("P","On")
+                        else:
+                            resume_from_standby()
                     if uart_message[1] == "0":
-                        print("UART Info: RP2040 called Standby")
+                        print("UART Info: Pi Pico called Standby")
                         standby()
         except Exception as error:
                print("UART Error:", str(error))
@@ -608,6 +655,11 @@ def run():
             if setup.gpio_available:
                 check_gpio_input()
             tuning()
+
+        if now - heartbeat_time > settings.heartbeat_interval:
+            send_uart("H", "1")
+            heartbeat_time = now
+
         clock.tick(200)
 
 def process_button_press(uart_message):
@@ -660,7 +712,7 @@ class Radiostation:
 
     def live_playback(self):
         global volume
-        self.start_pos = 0
+        #self.start_pos = 0
         if self.files:
             self.start_pos = max(time.time() - self.start_time, 0)
             # print("Time based start_pos =", round(self.start_pos, 3))
@@ -675,7 +727,7 @@ class Radiostation:
             #  Find where in the station list we should be base on start position
             self.song_length = self.song_lengths[0]  # length of the current song
             if self.song_length and self.start_pos > self.song_length:
-                print("Info: Start_pos longer than song length, skipping songs", round(self.start_pos, 3), self.song_length)
+                print("Info: Start_pos longer than song length, skipping songs", round(self.start_pos, 3), round(self.song_length, 3))
 
                 while self.start_pos > self.song_length:
                     # print("Skipping song", self.song_length)

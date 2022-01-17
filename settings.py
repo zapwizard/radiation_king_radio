@@ -57,7 +57,9 @@ sound_band_change = "sounds/Band_Change.ogg"
 
 #Uart Related:
 buad_rate = 19200
-uart_timeout = 0.002
+uart_timeout = 0.005
+heartbeat_interval = 3
+pico_heartbeat_timeout = 15 #Must be larger than the sending interval on Pi Pico
 
 #ADC Related:
 ADC_Min = 13
@@ -65,3 +67,11 @@ ADC_Max = 4096
 
 #LED related:
 led_qty = 7 # Subtract one due to zero address
+
+#Pi Pico related:
+# These are used to verify the pi pico is connected
+pico_vendor = "Raspberr"
+pico_model = "Pico"
+pico_size = 1049088
+pico_source = "pi_pico_files/" #folder with Pi Pico files
+pico_folder_name = "pico" # /media/xxx Mount name on the Pi Zero

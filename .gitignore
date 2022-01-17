@@ -5,3 +5,6 @@
 /old_code/
 *.pyc
 /pi_pico_files/_gsdata_/
+pi_pico_files/.metadata_never_index
+pi_pico_files/.Trashes
+pi_pico_files/.fseventsd/no_log
