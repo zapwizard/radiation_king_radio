@@ -50,7 +50,8 @@ Example:
 	[metadata]
 	station_name = The Shadow
 	ordered = True
-	
+
+#Software setup:
 ## settings.py file:
 This is a file that has settings you may want to tweak. Such as the volume of the static background sounds, and whether to re-build the cache files.
 Each time you alter the audio files you should enable caching, reboot, and then disable caching after boot is complete.
@@ -59,6 +60,18 @@ You can operate the radio with caching always enabled, but it will make the boot
 ## Pi Pico files:
 The pi_pico_files folder contains the code for the Pi Pico. You must have already loaded CircuitPython 7.1.1 or later prior to connecting it to the Pi Zero via USB.
 The Pi Zero code will automatically copy the files needed to the Pi Pico. The Pi Pico will send its serial output to the Pi Zero over UART, but you won't see the messages on the Zero until the read_uart loops occurs. To see USB serial playback you need to disable the print() command in the code.py files.
+
+## Requirements:
+Make sure and install all the requirements listed in requirements.txt on your Pi Zero.
+
+## Auto running the script:
+- Run `sudo raspi-config` on the Pi Zero. Select “Boot Options” then “Desktop/CLI” then “Console Autologin”
+- Ensure the files are in `\home\pi\radking`
+- Run `sudo nano /etc/profile`
+- Add to the file:
+  - `cd /`
+  - `cd /home/pi/radking`
+  -  `sudo /usr/bin/python -u /home/pi/radking/main.py &`
 
 # Operation:
 ## How the "Live" playback works:

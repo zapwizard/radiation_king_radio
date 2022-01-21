@@ -20,7 +20,7 @@ ADC_Max = 4095
 ADC_Reported_Max = 65536
 ADC_0 = analogio.AnalogIn(board.A0) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
 ADC_1 = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer for the tuning control.
-ADC_0_Smoothing = 0.5  # Float between 0 and 1. Lower means more smoothing
+ADC_0_Smoothing = 0.7  # Float between 0 and 1. Lower means more smoothing
 ADC_1_Smoothing = 0.15  # Float between 0 and 1. Lower means more smoothing
 ADC_1_dead_zone = 0.6
 
@@ -40,7 +40,7 @@ button_held_state= [False] * button_quantity
 button_event_type = None
 
 #Switches:
-switches = keypad.Keys((board.GP8,board.GP9),value_when_pressed=False, pull=True, interval=0.05)
+switches = keypad.Keys((board.GP8,board.GP9),value_when_pressed=False, pull=True, interval=0.1)
 switch_quantity = 2
 switch_ccw = 1
 switch_cw = 0
@@ -72,12 +72,12 @@ motor_cos = None
 motor_direction = None
 pwm_max_value = 65535 # 65535 max
 motor_ref_voltage = 3.3
-motor_min_angle = 0
-motor_max_angle = 150
-motor_mid_point = (motor_max_angle - motor_min_angle) / 2
+motor_min_angle = 14 # This must match the settings on the Zero
+motor_max_angle = 168
+motor_mid_point = (motor_max_angle - motor_min_angle) / 2 + 15
 
 # Uart Related
-uart = busio.UART(board.GP0, board.GP1, baudrate=19200, timeout=0.01)
 uart_heartbeat_interval = 3
 pi_zero_heartbeat_timeout = 15 # must be greater than the heartbeat interval on pi zero
+uart_timeout = 0.01
 

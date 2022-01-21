@@ -1,6 +1,7 @@
 #This code goes onto the Pi Pico
 import time
 import board
+import sys
 import busio
 import digitalio
 import analogio
@@ -11,6 +12,8 @@ import keypad
 import supervisor
 import pico_settings
 from adafruit_simplemath import map_range, constrain
+import atexit
+import usb_cdc
 
 ## globals:
 # ADC Related:
@@ -35,24 +38,33 @@ pi_state = False
 led_heartbeat_prev = 0
 uart_heartbeat_time = 0
 pi_zero_heartbeat_time = 0
+usb_cdc.console.timeout = pico_settings.uart_timeout
+usb_cdc.data.timeout = pico_settings.uart_timeout
+uart_line = None
 
-def blink_led():
-    global on_off_state
-    pico_settings.led.value = not pico_settings.led.value if on_off_state else False
+def receive_uart():
+    global uart_line
+    try:
+        if usb_cdc.data.connected:
+            uart_line = usb_cdc.data.readline() # Read data until "\n" or timeout
+            if uart_line:
 
-blink_led()
+                if type(uart_line) is bytes:
+                    uart_line = uart_line.decode("utf-8")  # Convert from bytes to string
+                uart_line = uart_line.strip("\n")  # Strip end line
+                return "".join(uart_line).split(",")  # Split into array of commands
+    except Exception as e:
+        print("Error, Uart:", e)
+
+def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
+    try:
+        usb_cdc.data.write(bytes(f"{command_type},{data1},{data2},{data3},{data4},\n", "utf-8")) #if using USB serial
+    except Exception as error:
+        _, err, _ = sys.exc_info()
+        print("UART Error: (%s)" % err, error)
 
 def set_motor(angle, disable = False, from_uart = False):  # Set angle in degrees
     global motor_angle
-
-    if disable:
-        pico_settings.SIN_PWM.duty_cycle = 0
-        pico_settings.SIN_POS.value = False
-        pico_settings.SIN_NEG.value = False
-        pico_settings.COS_PWM.duty_cycle = 0
-        pico_settings.COS_POS.value = False
-        pico_settings.COS_NEG.value = False
-        return
 
     if angle != motor_angle: # if the angle changed:
         motor_angle = angle
@@ -75,19 +87,19 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
         #print("Angle:",angle, "\tSinV:", sin_coil_voltage, "\tSinPWM:", sin_coil_pwm, "\tCosV", cos_coil_voltage, "\tCosPWM=",cos_coil_pwm)
 
         # Change the polarity of the coil depending on the sign of the voltage level
-        if sin_radian < 0:
+        if sin_radian <= 0:
             pico_settings.SIN_PWM.duty_cycle = sin_coil_pwm
             if pico_settings.SIN_DIRECTION:
-                SIN_POS.value = True
-                SIN_NEG.value = False
+                pico_settings.SIN_POS.value = True
+                pico_settings.SIN_NEG.value = False
             else:
-                SIN_POS.value = False
-                SIN_NEG.value = True
+                pico_settings.SIN_POS.value = False
+                pico_settings.SIN_NEG.value = True
         else:
             pico_settings.SIN_PWM.duty_cycle = sin_coil_pwm
             pico_settings.SIN_POS.value = False
             pico_settings.SIN_NEG.value = True
-        if cos_radian < 0:
+        if cos_radian <= 0:
             pico_settings.COS_PWM.duty_cycle = cos_coil_pwm
             if pico_settings.COS_DIRECTION:
                 pico_settings.COS_POS.value = True
@@ -103,6 +115,15 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
             else:
                 pico_settings.COS_POS.value = True
                 pico_settings.COS_NEG.value = False
+
+    if disable:
+        time.sleep(0.5)
+        pico_settings.SIN_PWM.duty_cycle = 0
+        pico_settings.SIN_POS.value = False
+        pico_settings.SIN_NEG.value = False
+        pico_settings.COS_PWM.duty_cycle = 0
+        pico_settings.COS_POS.value = False
+        pico_settings.COS_NEG.value = False
 
 def test_motor():
     set_motor(0)
@@ -117,6 +138,9 @@ def test_motor():
     set_motor(pico_settings.motor_max_angle)
     time.sleep(3)
 
+
+def blink_led():
+    pico_settings.led.value = not pico_settings.led.value
 
 def check_buttons():
     button_event = pico_settings.buttons.events.get()
@@ -212,7 +236,7 @@ def soft_stop():
         pico_settings.pixels.fill((0, 0, 0, led_brightness))
         time.sleep(0.01)
     pico_settings.pixels.fill((0, 0, 0, 0))
-    set_motor(pico_settings.motor_mid_point, True)
+    set_motor(pico_settings.motor_mid_point, disable = True)
 
 def set_pixel(pixel=None):
     global neopixel_set_time
@@ -223,46 +247,26 @@ def set_pixel(pixel=None):
         pico_settings.pixels[pixel] = (0, 0, 0, 255)
         neopixel_set_time = time.time()
 
-def receive_uart():
-    line = pico_settings.uart.readline() # Read data until "\n" or timeout
-    if line:
-        try:
-            line = line.decode("utf-8") # Convert from bytes to string
-            line = line.strip("\n") # Strip end line
-            return "".join(line).split(",") # Split into array of commands
-        except Exception as e:
-            print("Error, Uart:",e)
 
-def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
-    try:
-        #print("Message:","<",command_type,",",data1,",",data2,",",data3,",",data4,",>")  # Debug (Slow)
-        pico_settings.uart.write(bytes(f"{command_type},{data1},{data2},{data3},{data4},\n", "utf-8"))
-    except Exception as error:
-        _, err, _ = sys.exc_info()
-        print("UART Error: (%s)" % err, error)
 
 def wait_for_pi():
     global pi_state, pi_zero_heartbeat_time, uart_heartbeat_time
     print("Info: Waiting for pi zero heartbeat")
     while not pi_state:
         blink_led()
-        now = time.time()
-        if now - uart_heartbeat_time >= pico_settings.uart_heartbeat_interval:
-            uart_heartbeat_time = now
-            blink_led()
-            send_uart("H", "1")
-
         uart_message = receive_uart()
         if uart_message:
+            #print("Pico: UART echo:",uart_message)
             try:
                 if uart_message[0] == "H":
-                    if len(uart_message) > 1 and uart_message[1]:
-                        if uart_message[1] == "1":
+                    if uart_message[1] and len(uart_message) > 1:
+                        if uart_message[1] == "Zero":
                             pi_state = True
                             pi_zero_heartbeat_time = time.time()
                             print("From Zero: Pi Zero Heartbeat received")
             except Exception as error:
                 print("Error: Uart,", error)
+        time.sleep(0.1)
 
 
 def buttons():
@@ -329,18 +333,21 @@ def switches():
             print("Event: Switch 1, On")
             switch_1_state = True
 
-def print_serial(*args, **kwargs):
-    send_uart("I", *args, **kwargs)
-print = print_serial # Override print calls and send to Pi Zero. Disable this for normal USB serial output
+@atexit.register
+def exit_script():
+    print("Exiting")
+    #pico_settings.serial.Close()
+
 
 print("Startup: Pi Pico Started")
 # Wait for Pi Zero due to its slower boot up time
+pico_settings.pixels.fill((16, 0, 0, 0))
 wait_for_pi() # Wait for the Pi Zero to be up and running
-pico_settings.pixels.fill((0, 0, 0, round(pico_settings.led_max_brightness / 9)))
+pico_settings.pixels.fill((0, 12, 0, 0))
 print("Startup: Waiting for on switch")
 while not switch_0_state:
     switches()
-    time.sleep(0.1)
+    time.sleep(0.2)
     blink_led()
 
 switches() # Ran twice to catch tuning knob startup setting
@@ -349,12 +356,13 @@ resume_from_standby()
 
 while True:
     now = time.time()
+
     if now - led_heartbeat_prev > pico_settings.led_heartbeat_interval:
             blink_led()
             led_heartbeat_prev = now
 
     if now - uart_heartbeat_time > pico_settings.uart_heartbeat_interval:
-            send_uart("H", "1")
+            send_uart("H", "Pico")
             uart_heartbeat_time = now
 
     if now - pi_zero_heartbeat_time > pico_settings.pi_zero_heartbeat_timeout:
@@ -363,6 +371,7 @@ while True:
         pi_state = False
         standby()
         wait_for_pi()
+
     switches()
     if on_off_state:
         check_adc()
@@ -373,8 +382,11 @@ while True:
                 set_pixel()
                 neopixel_set_time = None
 
+
     uart_message = receive_uart()
+
     if uart_message:
+        #print("UART Received:",uart_message)
         try:
             #Power commands
             if uart_message[0] == "P":
@@ -408,7 +420,7 @@ while True:
             if uart_message[0] == "H":
                 # print("Message:",uart_message)
                 if len(uart_message) > 1 and uart_message[1]:
-                    if uart_message[1] == "1":
+                    if uart_message[1] == "Zero":
                         pi_zero_heartbeat_time = now
                         pi_state = True
                         #print("From Zero: Pi Zero heartbeat received")
@@ -416,3 +428,4 @@ while True:
 
         except Exception as error:
             print("Uart Error:",error)
+

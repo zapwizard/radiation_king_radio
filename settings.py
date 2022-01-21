@@ -39,16 +39,9 @@ band_change_volume = 1 # How loud the band changing sound effect is played (Divi
 effects_volume = 0.8 # How loud the on/off and other sound effects are played
 
 # Air Core Motor Related:
-max_pwm_resolution = 255
-motor_vcc = 5
-motor_sin = 1  # Try flipping these four if your meter is running backwards
-motor_cos = 0
-forward = 0
-backward = 1
-motor_min_angle = 0  # Set this to zero and adjust the needle position first.
-motor_max_angle = 150
-motor_steps = motor_max_angle - motor_min_angle
-motor_mid_point = round((motor_max_angle - motor_min_angle)/2)
+motor_min_angle = 14 # This must match the settings on the Pico
+motor_max_angle = 168
+motor_range = motor_max_angle - motor_min_angle
 
 #Sound effects
 sound_off = "sounds/UI_Pipboy_Radio_Off.ogg"
@@ -56,10 +49,12 @@ sound_on = "sounds/UI_Pipboy_Radio_On.ogg"
 sound_band_change = "sounds/Band_Change.ogg"
 
 #Uart Related:
-buad_rate = 19200
-uart_timeout = 0.005
+buad_rate = 115200
+uart_timeout = 0.01
 heartbeat_interval = 3
 pico_heartbeat_timeout = 15 #Must be larger than the sending interval on Pi Pico
+serial_port = "/dev/ttyACM1" # use for USB serial data exchange
+#serial_port = "/dev/serial0 " # use for UART pins
 
 #ADC Related:
 ADC_Min = 13

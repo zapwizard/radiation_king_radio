@@ -491,7 +491,7 @@ def select_band(new_band_num, restore_angle = None):
 
         station_list = radio_band_list[new_band_num]
         total_station_num = len(station_list)
-        tuning_sensitivity = round(settings.motor_steps / total_station_num, 1)
+        tuning_sensitivity = round(settings.motor_range / total_station_num, 1)
         print("Info: Tuning angle separation =", tuning_sensitivity, "Number of stations:", total_station_num)
 
         stations = []
@@ -547,14 +547,15 @@ def wait_for_pico():
     while not pico_state:
         now = time.time()
         if now - heartbeat_time > settings.heartbeat_interval:
-            send_uart("H", "1")
+            send_uart("H", "Zero")
             heartbeat_time = now
         uart_message = receive_uart()
         if uart_message:
+            print("UART:", uart_message)
             try:
                 if uart_message[0] == "H":
                     if len(uart_message) > 1 and uart_message[1]:
-                        if uart_message[1] == "1":
+                        if uart_message[1] == "Pico":
                             pico_state = True
                             print("UART: Pi Pico heartbeat received")
             except Exception as error:
@@ -583,9 +584,8 @@ def receive_uart():
             line = line.strip("\n") # Strip end line
             return "".join(line).split(",")
     except Exception as error:
-        print(error)
-
-
+        setup.uart.close()  # close port
+        print("UART Error:",error)
 
 
 def run():
@@ -612,31 +612,33 @@ def run():
         try:
             uart_message = receive_uart()
             if uart_message and len(uart_message) > 1:
+                #print("From UART:", uart_message)
                 # Information output
                 if uart_message[0] == "I" and on_off_state:
                     print("Pico output:",uart_message[1])
 
-                if uart_message[0] == "H":  # Heartbeat
-                    if uart_message[1] == "1":
-                        pico_heartbeat_time = now
-                        pico_state = True
-                        #print("UART: pico heartbeat received")
+                if uart_message[0] == "H" and uart_message[1] == "Pico":
+                    pico_heartbeat_time = now
+                    pico_state = True
+                    #print("UART: Pi Pico heartbeat received")
 
                 #Button Input
-                if uart_message[0] == "B" and on_off_state:
-                    if uart_message[1] == "1":  # Button released
-                        process_button_press(uart_message)
-                    if uart_message[1] == "2":  # Button held
-                        process_button_hold(uart_message)
+                if on_off_state:
+                    if uart_message[0] == "B":
+                        if uart_message[1] == "1":  # Button released
+                            process_button_press(uart_message)
+                        if uart_message[1] == "2":  # Button held
+                            process_button_hold(uart_message)
 
-                #Volume Input
-                if uart_message[0] == "V" and on_off_state:
-                    set_volume_level(float(uart_message[1]))
+                    #Volume Input
+                    if uart_message[0] == "V":
+                        set_volume_level(float(uart_message[1]))
 
-                #Motor input
-                if uart_message[0] == "M" and on_off_state:
-                    set_motor(float(uart_message[1]))
-                    tuning_locked = False
+                    #Motor input
+                    if uart_message[0] == "M":
+                        set_motor(float(uart_message[1]))
+                        tuning_locked = False
+                        #print("From Pico: Motor command",float(uart_message[1]))
 
                 # Power State
                 if uart_message[0] == "P":
@@ -657,7 +659,7 @@ def run():
             tuning()
 
         if now - heartbeat_time > settings.heartbeat_interval:
-            send_uart("H", "1")
+            send_uart("H", "Zero")
             heartbeat_time = now
 
         clock.tick(200)
@@ -877,6 +879,7 @@ def exit_script():
     send_uart("P", False)  # Tell the Pi Pico we are going to sleep
     if setup.uart:
         setup.uart.close()  # close port
+    setup.mount.unmount(setup.device_name)
     print("Action: Exiting")
 
 if __name__ == "__main__":
