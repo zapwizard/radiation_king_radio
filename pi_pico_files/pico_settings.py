@@ -6,6 +6,7 @@ import neopixel
 import pwmio
 import busio
 import analogio
+import time
 
 #LED related:
 led = digitalio.DigitalInOut(board.LED)
@@ -15,17 +16,19 @@ led_heartbeat_interval = 1
 
 
 # ADC related:
-ADC_Min = 13
-ADC_Max = 4095
-ADC_Reported_Max = 65536
+ADC_0_Min = 1024 # Deliberately high to allow for self-calibration
+ADC_0_Max = 2048 # Deliberately low to allow for self-calibration
+ADC_1_Min = 1024 # Deliberately high to allow for self-calibration
+ADC_1_Max = 2048 # Deliberately low to allow for self-calibration
 ADC_0 = analogio.AnalogIn(board.A0) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
 ADC_1 = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer for the tuning control.
 ADC_0_Smoothing = 0.7  # Float between 0 and 1. Lower means more smoothing
 ADC_1_Smoothing = 0.15  # Float between 0 and 1. Lower means more smoothing
 ADC_1_dead_zone = 0.6
 
+
 #Buttons:
-buttons = keypad.Keys((board.GP10,board.GP11,board.GP12,board.GP7,board.GP14),value_when_pressed=False, pull=True, interval=0.05)
+buttons = keypad.Keys((board.GP10,board.GP11,board.GP12,board.GP13,board.GP14),value_when_pressed=False, pull=True, interval=0.05)
 button_quantity = 5
 button_short_press = 60
 button_long_press = 2000

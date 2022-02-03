@@ -504,8 +504,11 @@ def select_band(new_band_num, restore_angle = None):
         send_uart("C", "LED", str(led_num))
         time.sleep(0.5)  # Give the and LED time to show
         send_uart("C", "Sweep")
+
+        # wait for sweep to finish or 5 seconds
+        now = time.time()
         sweep_done = False
-        while not sweep_done: # wait for sweep to finish
+        while not sweep_done or time.time() - now > 5:
             uart_message = receive_uart()
             if uart_message:
                 try:
@@ -545,6 +548,8 @@ def wait_for_pico():
     global pico_state, heartbeat_time
     print("Waiting for Pi Pico heartbeat")
     while not pico_state:
+        if setup.gpio_available:
+            check_gpio_input()
         now = time.time()
         if now - heartbeat_time > settings.heartbeat_interval:
             send_uart("H", "Zero")
@@ -653,9 +658,9 @@ def run():
                         standby()
         except Exception as error:
                print("UART Error:", str(error))
+        if setup.gpio_available:
+            check_gpio_input()
         if on_off_state:
-            if setup.gpio_available:
-                check_gpio_input()
             tuning()
 
         if now - heartbeat_time > settings.heartbeat_interval:

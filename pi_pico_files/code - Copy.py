@@ -1,13 +1,63 @@
+import board
+import audiobusio
+from microcontroller import Pin
+
+def is_hardware_PDM(clock, data):
+    try:
+        p = audiobusio.PDMIn(clock, data)
+        p.deinit()
+        return True
+    except ValueError:
+        return False
+    except RuntimeError:
+        return True
+
+
+def get_unique_pins():
+    exclude = ['NEOPIXEL', 'APA102_MOSI', 'APA102_SCK']
+    pins = [pin for pin in [
+        getattr(board, p) for p in dir(board) if p not in exclude]
+            if isinstance(pin, Pin)]
+    unique = []
+    for p in pins:
+        if p not in unique:
+            unique.append(p)
+    return unique
+
+
+for clock_pin in get_unique_pins():
+    for data_pin in get_unique_pins():
+        if clock_pin is data_pin:
+            continue
+        if is_hardware_PDM(clock_pin, data_pin):
+            print("Clock pin:", clock_pin, "\t Data pin:", data_pin)
+        else:
+            pass
+sys.exit()
+
+
+
+
+
+
+
+
 #This code goes onto the Pi Pico
 import time
+import board
 import sys
+import busio
+import digitalio
+import analogio
+import neopixel
+import pwmio
 import math
+import keypad
 import supervisor
+import pico_settings
 from adafruit_simplemath import map_range, constrain
 import atexit
 import usb_cdc
-import pico_settings
-import analogio
 
 ## globals:
 # ADC Related:
@@ -177,34 +227,21 @@ def check_adc():
 
     # Switch 0 disables ADC_0 (To allow for standby mode)
     if switch_0_state:
-        ADC_0_Value = pico_settings.ADC_0.value
-
-        # ADC_0 Self Calibartion
-        if ADC_0_Value < pico_settings.ADC_0_Min: pico_settings.ADC_0_Min = ADC_0_Value
-        if ADC_0_Value > pico_settings.ADC_0_Max: pico_settings.ADC_0_Max = ADC_0_Value
-
-        ADC_0_smoothed = pico_settings.ADC_0_Smoothing * ADC_0_Value + (1 - pico_settings.ADC_0_Smoothing) * ADC_0_smoothed
-        volume = round(map_range(ADC_0_smoothed, pico_settings.ADC_0_Min, pico_settings.ADC_0_Max, 0, 1), 3)
+        ADC_0_smoothed = pico_settings.ADC_0_Smoothing * pico_settings.ADC_0.value + (1 - pico_settings.ADC_0_Smoothing) * ADC_0_smoothed
+        volume = round(map_range(ADC_0_smoothed, pico_settings.ADC_Min, pico_settings.ADC_Reported_Max, 0, 1), 3)
         if volume != ADC_0_Prev_Value:
             ADC_0_Prev_Value = volume
             send_uart("V", str(volume))
-            #print("Volume:",str(volume), ADC_0_smoothed, pico_settings.ADC_0.value)
 
     # Switch 1 disables ADC_1 (To allow for manual tuning)
     if switch_1_state:
-        ADC_1_Value = pico_settings.ADC_1.value
-
-        #ADC_1 Self Calibartion
-        if ADC_1_Value < pico_settings.ADC_1_Min: pico_settings.ADC_1_Min = ADC_1_Value
-        if ADC_1_Value > pico_settings.ADC_1_Max: pico_settings.ADC_1_Max = ADC_1_Value
-
-        ADC_1_smoothed = pico_settings.ADC_1_Smoothing * ADC_1_Value + (1 - pico_settings.ADC_1_Smoothing) * ADC_1_smoothed
-        angle = round(map_range(ADC_1_smoothed, pico_settings.ADC_1_Min, pico_settings.ADC_1_Max, pico_settings.motor_min_angle,
+        ADC_1_smoothed = pico_settings.ADC_1_Smoothing * pico_settings.ADC_1.value + (1 - pico_settings.ADC_1_Smoothing) * ADC_1_smoothed
+        angle = round(map_range(ADC_1_smoothed, pico_settings.ADC_Min, pico_settings.ADC_Reported_Max, pico_settings.motor_min_angle,
                                 pico_settings.motor_max_angle), 1)
         if angle > ADC_1_Prev_Value + pico_settings.ADC_1_dead_zone or angle < ADC_1_Prev_Value - pico_settings.ADC_1_dead_zone:
             ADC_1_Prev_Value = angle
             set_motor(angle)
-            #print("Input: New pot driven angle:",angle, ADC_1_smoothed, pico_settings.ADC_1.value)
+            #print("Input: New pot driver angle:",angle)
 
 
 def resume_from_standby():
@@ -435,120 +472,4 @@ while True:
 
         except Exception as error:
             print("Uart Error:",error)
-
-
-
-#Code prototype for ultrasonic PDM microphone (waiting for a Circuitpython patch)
-
-import board
-import array
-import audiobusio
-import math
-from ulab import numpy as np
-from ulab.scipy.signal import spectrogram
-
-
-#Ultrasonic Mic Related
-threshold = 100
-pdm_select = digitalio.DigitalInOut(board.GP2)
-pdm_select.direction = digitalio.Direction.OUTPUT
-pdm_select.value = False #Enable ultrasonic mode
-
-sample_frequency = 21000
-sample_size = 1024
-mic = audiobusio.PDMIn(board.GP3, board.GP4, sample_rate=sample_frequency, bit_depth=8, mono=True)
-print ("sample_size=",sample_size,"sample_frequency=",sample_frequency,"returned mic.sample_rate=",mic.sample_rate)
-time_per_sample = None
-samples = array.array('B', [1] * sample_size)
-check = array.array('B', [1] * sample_size)
-
-def benchmark_capture():
-    global sample_frequency, sample_size, time_per_sample
-    start_capture_time = time.monotonic_ns()
-    mic.record(samples, len(samples))
-    if samples == check:
-        print("Failed to capture samples")
-    else:
-        sample_duration = time.monotonic_ns() - start_capture_time
-        time_per_sample = sample_duration / sample_size
-        if time_per_sample:
-            sample_frequency = round((1 / time_per_sample) * 10**9)
-            print(sample_size, "samples took",sample_duration,"ns or", time_per_sample, "ns per sample", "| Max Sample Frequency =", sample_frequency)
-
-#while True:
-benchmark_capture()
-    #time.sleep(5)
-
-
-# Remove DC bias before computing RMS.
-def mean(values):
-    return sum(values) / len(values)
-
-def normalized_rms(values):
-    minbuf = int(mean(values))
-    samples_sum = sum(
-        float(sample - minbuf) * (sample - minbuf)
-        for sample in values
-    )
-    return math.sqrt(samples_sum / len(values))
-
-def perform_fft(samples):
-    real, imaginary = np.fft.fft(np.array(samples)) # Perform FFT
-    results = real[1:len(real)] # Remove DC offset
-    return results
-
-def perform_spectrogram(samples):
-    results = spectrogram(np.array(samples))
-    results = results[1:len(results)] # Remove DC offset
-    return results
-
-def determine_energies(results):
-    global threshold, hz_per_sample
-    lowest_energy = round(abs(np.min(results)))
-    if lowest_energy > threshold:
-        highest_address = np.argmax(results) + 1 # Determine max energetic signal
-        highest_frequency = highest_address * hz_per_sample # Get the frequency of the highest amplitude
-        return highest_frequency
-
-def determine_button(highest):
-    if highest > 250000:
-        print("4: Channel Lower", highest)
-    elif highest > 70:
-        print("3: Channel Lower", highest)
-    elif highest > 30:
-        print("2: Volume On/Off", highest)
-    elif highest > 22000:
-        print("1: Channel Higher", highest)
-    else:
-        print("Invalid", highest)
-
-hz_per_sample = sample_frequency / sample_size
-print("hz_per_sample=", hz_per_sample)
-time.sleep(3)
-
-
-mic.record(samples, len(samples))
-
-#Perform FFT on samples
-fft_results = perform_fft(samples)
-#fft_results = perform_spectrogram(samples)
-
-#Crop to upper frequencies:
-fft_results = fft_results[round(len(fft_results)/2):len(fft_results)]
-
-#Determine if samples are above threshold
-lowest_energy = round(abs(np.min(fft_results)))
-
-#if lowest_energy > threshold:
-
-magnitude = normalized_rms(fft_results)
-
-# Compute the highest average result:
-highest_address = np.argmax(fft_results)
-highest_frequency = round(highest_address * hz_per_sample) # Get the frequency of the highest amplitude
-
-print(("lowest_energy",lowest_energy,"\t|avg magnitude",magnitude))
-#"\t|highest_frequency",highest_frequency))
-
-time.sleep(5)
 
