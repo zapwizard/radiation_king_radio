@@ -63,18 +63,18 @@ import usb_cdc
 # ADC Related:
 ADC_0_Prev_Value = 0
 ADC_0_smoothed = 0
-ADC_1_Prev_Value = 0
+motor_angle_prev = 0
 ADC_1_smoothed = 0
 
 #Switch related:
-switch_0_state = None
-switch_1_state = None
+volume_switch_state = None
+tuning_switch_state = None
 
 #Motor related:
 motor_angle = 0
 
 #NeoPIxel related:
-neopixel_set_time = None
+gauge_pixel_set_time = None
 
 #Misc
 on_off_state = False
@@ -222,8 +222,8 @@ def check_switches():
     return None, None
 
 def check_adc():
-    global ADC_0_Prev_Value, ADC_1_Prev_Value
-    global switch_0_state, switch_1_state, ADC_1_smoothed, ADC_0_smoothed
+    global ADC_0_Prev_Value, motor_angle_prev
+    global volume_switch_state, tuning_switch_state, ADC_1_smoothed, ADC_0_smoothed
 
     # Switch 0 disables ADC_0 (To allow for standby mode)
     if switch_0_state:
@@ -238,7 +238,7 @@ def check_adc():
         ADC_1_smoothed = pico_settings.ADC_1_Smoothing * pico_settings.ADC_1.value + (1 - pico_settings.ADC_1_Smoothing) * ADC_1_smoothed
         angle = round(map_range(ADC_1_smoothed, pico_settings.ADC_Min, pico_settings.ADC_Reported_Max, pico_settings.motor_min_angle,
                                 pico_settings.motor_max_angle), 1)
-        if angle > ADC_1_Prev_Value + pico_settings.ADC_1_dead_zone or angle < ADC_1_Prev_Value - pico_settings.ADC_1_dead_zone:
+        if angle > ADC_1_Prev_Value + pico_settings.angle_dead_zone or angle < ADC_1_Prev_Value - pico_settings.angle_dead_zone:
             ADC_1_Prev_Value = angle
             set_motor(angle)
             #print("Input: New pot driver angle:",angle)
@@ -264,31 +264,31 @@ def standby():
 def sweep():
     for angle in range(pico_settings.motor_min_angle, pico_settings.motor_max_angle):
         set_motor(angle)
-        led_brightness = map_range(angle, pico_settings.motor_min_angle, pico_settings.motor_max_angle, 0, pico_settings.led_max_brightness)
-        pico_settings.pixels.fill((0, 0, 0, round(led_brightness)))
+        led_brightness = map_range(angle, pico_settings.motor_min_angle, pico_settings.motor_max_angle, 0, pico_settings.gauge_pixel_max_brightness)
+        pico_settings.gauge_pixels.fill((0, 0, 0, round(led_brightness)))
         time.sleep(0.01)
     send_uart("C","Sweep Done")
 
 def soft_stop():
     global motor_angle
-    for led_brightness in range(pico_settings.led_max_brightness, 0, -1):
+    for led_brightness in range(pico_settings.gauge_pixel_max_brightness, 0, -1):
         if motor_angle < pico_settings.motor_mid_point:
-            angle = round(map_range(led_brightness, pico_settings.led_max_brightness, 0, motor_angle, pico_settings.motor_mid_point), 1)
+            angle = round(map_range(led_brightness, pico_settings.gauge_pixel_max_brightness, 0, motor_angle, pico_settings.motor_mid_point), 1)
         else:
-            angle = round(map_range(led_brightness, 0, pico_settings.led_max_brightness, pico_settings.motor_mid_point, motor_angle), 1)
+            angle = round(map_range(led_brightness, 0, pico_settings.gauge_pixel_max_brightness, pico_settings.motor_mid_point, motor_angle), 1)
         set_motor(angle)
-        pico_settings.pixels.fill((0, 0, 0, led_brightness))
+        pico_settings.gauge_pixels.fill((0, 0, 0, led_brightness))
         time.sleep(0.01)
-    pico_settings.pixels.fill((0, 0, 0, 0))
+    pico_settings.gauge_pixels.fill((0, 0, 0, 0))
     set_motor(pico_settings.motor_mid_point, disable = True)
 
 def set_pixel(pixel=None):
-    global neopixel_set_time
+    global gauge_pixel_set_time
     if pixel is None:
-        pico_settings.pixels.fill((0, 0, 0, pico_settings.led_max_brightness))
+        pico_settings.gauge_pixels.fill((0, 0, 0, pico_settings.gauge_pixel_max_brightness))
     else:
-        pico_settings.pixels.fill((0, 0, 0, round(pico_settings.led_max_brightness / 8)))
-        pico_settings.pixels[pixel] = (0, 0, 0, 255)
+        pico_settings.gauge_pixels.fill((0, 0, 0, round(pico_settings.gauge_pixel_max_brightness / 8)))
+        pico_settings.gauge_pixels[pixel] = (0, 0, 0, 255)
         neopixel_set_time = time.time()
 
 
@@ -357,7 +357,7 @@ def buttons():
             send_uart("B", "2", "4")
 
 def switches():
-    global switch_0_state, switch_1_state
+    global volume_switch_state, tuning_switch_state
     switch_number, switch_event_type = check_switches()
     if switch_event_type is pico_settings.switch_ccw:
         if switch_number == 0:
@@ -385,11 +385,11 @@ def exit_script():
 
 print("Startup: Pi Pico Started")
 # Wait for Pi Zero due to its slower boot up time
-pico_settings.pixels.fill((16, 0, 0, 0))
+pico_settings.gauge_pixels.fill((16, 0, 0, 0))
 wait_for_pi() # Wait for the Pi Zero to be up and running
-pico_settings.pixels.fill((0, 12, 0, 0))
+pico_settings.gauge_pixels.fill((0, 12, 0, 0))
 print("Startup: Waiting for on switch")
-while not switch_0_state:
+while not volume_switch_state:
     switches()
     time.sleep(0.2)
     blink_led()
@@ -421,10 +421,10 @@ while True:
         check_adc()
         buttons()
 
-        if neopixel_set_time:
-            if now - neopixel_set_time > pico_settings.neopixel_set_timeout:
+        if gauge_pixel_set_time:
+            if now - gauge_pixel_set_time > pico_settings.neopixel_set_timeout:
                 set_pixel()
-                neopixel_set_time = None
+                gauge_pixel_set_time = None
 
 
     uart_message = receive_uart()

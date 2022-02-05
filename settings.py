@@ -22,19 +22,21 @@ GPIO_ACTIONS = {
 }
 
 # Music related
-reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files
+reset_cache = False  # Set this to force remaking the song cache files. Required if you changed any of the song files, otherwise keep false.
 stations_root_folder = "radio/"
 static_sound_folder = "sounds/Static_Chunks"  # Place multiple static noise files here to randomize the noise
-static_volume = 8  # Divisor: Larger number means lower volume
+static_volume = 0.1  # 0-1
 static_volume_min = 0.008  # Minimum static level, used to ensure some static at low volumes (Over ridden if volume is zero)
 volume_step = 0.008 # 0.008 seems to be the lowest volume level possible
-volume_min = 0.008  # Use 0.008 if you want the radio to never be silent
+volume_min = static_volume_min  # Use static_volume_min if you want the radio to never be completely silent
 fast_forward_increment = 5  # in seconds
 rewind_increment = 5 # in seconds
 
+
+
 # Tuning related:
-tuning_near = 3 # Adjusts how near you need to be to hear a station in the static while turning (3 = 1/3rd the gap between stations)
-tuning_lock_on = 7  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
+tuning_near = 0.3 # 0 - 1Adjusts how near you need to be to hear a station in the static while turning
+tuning_lock_on = 8  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
 band_change_volume = 1 # How loud the band changing sound effect is played (Divisor of current volume)
 effects_volume = 0.8 # How loud the on/off and other sound effects are played
 
@@ -56,12 +58,8 @@ pico_heartbeat_timeout = 15 #Must be larger than the sending interval on Pi Pico
 serial_port = "/dev/ttyACM1" # use for USB serial data exchange
 #serial_port = "/dev/serial0 " # use for UART pins
 
-#ADC Related:
-ADC_Min = 13
-ADC_Max = 4096
-
 #LED related:
-led_qty = 7 # Subtract one due to zero address
+gauge_pixel_qty = 7 # Must be 1 less than pico_settings gauge_pixel_qty
 
 #Pi Pico related:
 # These are used to verify the pi pico is connected

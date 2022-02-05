@@ -1,3 +1,6 @@
+# Licence: Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
+# Written by ZapWizard (Joshua Driggs)
+
 #!/usr/bin/python3
 import atexit
 import configparser
@@ -12,6 +15,7 @@ import pygame
 import setup
 import settings
 
+# Variables
 clock = pygame.time.Clock()
 volume = float(0.05)
 volume_time = time.time()
@@ -42,27 +46,25 @@ pico_state = False
 pico_heartbeat_time = 0
 
 
-
+# Sound related
 try:
-    print("State: Starting sound initialization")
+    print("Startup: Starting sound initialization")
 
     pygame.mixer.quit()
     pygame.mixer.init(44100, -16, 2, 4096)
-    if pygame.mixer.get_init():
-        print("Success: Sound initialized")
-    else:
+    if not pygame.mixer.get_init():
         print("Error: Sound failed to initialize")
 except Exception as e:
     sys.exit("Error: Sound setup failed" + str(e))
 
-print("State: Starting pygame initialization")
+print("Startup: Starting pygame initialization")
 os.environ["SDL_VIDEODRIVER"] = "dummy"  # Make a fake screen
 os.environ['SDL_AUDIODRIVER'] = 'alsa'
 pygame.display.set_mode((1, 1))
 pygame.init()
 
 # Reserve a sound channel for static sounds
-print("State: Loading static sounds (Ignore the underrun errors)")
+print("Startup: Loading static sounds (Ignore the underrun errors)")
 pygame.mixer.set_reserved(1)
 pygame.mixer.set_reserved(2)
 pygame.mixer.set_reserved(3)
@@ -76,6 +78,8 @@ snd_off = pygame.mixer.Sound(settings.sound_off)
 snd_on = pygame.mixer.Sound(settings.sound_on)
 snd_band = pygame.mixer.Sound(settings.sound_band_change)
 
+
+# Static sound related
 static_sounds = {}
 i = 0
 for file in sorted(os.listdir(settings.static_sound_folder)):
@@ -152,7 +156,7 @@ def set_volume_level(volume_level, direction=None):
     volume = clamp(round(float(volume_level), 3), settings.volume_min, 1)
     pygame.mixer.music.set_volume(volume)
     if volume > 0:
-        static_volume = max(round(volume / settings.static_volume,3), settings.static_volume_min)
+        static_volume = max(round(volume * settings.static_volume,3), settings.static_volume_min)
     else:
         static_volume = 0
     pygame.mixer.Channel(1).set_volume(static_volume)
@@ -185,8 +189,6 @@ def resume_from_standby():
         pygame.time.set_timer(settings.EVENTS['BLINK'], 1000)
         on_off_state = True
         setup.uart.flushInput()
-
-        send_uart("C", True) # Tell the Pi Pico we are awake
 
         pygame.mixer.Channel(2).set_volume(settings.effects_volume)
         pygame.mixer.Channel(2).play(snd_on)
@@ -231,9 +233,11 @@ def handle_event(event):
 
 
 def get_radio_bands(station_folder):
-    print("State: Starting folder search in :", station_folder)
-
+    print("Startup: Starting folder search in :", station_folder)
+    if settings.reset_cache:
+        print("WARNING: Caching enabled. This can take a while")
     radio_bands = []
+
     for folder in sorted(os.listdir(station_folder)):
         sub_radio_bands = []
         if os.path.isdir(station_folder + folder):
@@ -273,7 +277,7 @@ def get_radio_bands(station_folder):
                     if not settings.reset_cache:
                         try:
                             station_data = eval(station_ini_parser.get('cache', 'station_data'))
-                            print("Info: Loaded station data from", station_meta_data_file)
+                            print("Info: Loaded data from", station_meta_data_file)
                         except Exception as error:
                             print(str(error), "Error: Could not read cache file in", station_meta_data_file)
                         try:
@@ -286,14 +290,16 @@ def get_radio_bands(station_folder):
                         except Exception as error:
                             print(str(error), "station_data[3]=",station_data[3])
                     else:
-                        station_files = []
-                        station_lengths = []
+                        #print("Starting Song Data Cache in ", sub_folder)
+                        station_files = []  # File paths
+                        station_lengths = []  # Song lengths
 
                         for song_file in sorted(os.listdir(path)):
                             if song_file.endswith(".ogg"):
                                 station_files.append(os.path.join(path, song_file))
+                                file_path = os.path.join(path, song_file)
                                 try:
-                                    station_lengths.append(mutagen.File(os.path.join(path, song_file)).info.length)
+                                    station_lengths.append(mutagen.File(file_path).info.length)
                                 except Exception as error:
                                     print("Mutagen error:", str(error), "in file", song_file)
                         total_length = sum(station_lengths)
@@ -346,8 +352,8 @@ def get_station_pos(station_number):
             station_number,
             0,
             total_station_num - 1,
-            settings.motor_min_angle + (tuning_sensitivity / settings.tuning_near),
-            settings.motor_max_angle - (tuning_sensitivity / settings.tuning_near),
+            settings.motor_min_angle + (tuning_sensitivity * settings.tuning_near),
+            settings.motor_max_angle - (tuning_sensitivity * settings.tuning_near),
         ),
         1,
     )
@@ -359,8 +365,8 @@ def get_nearest_station(angle):
     nearest_station = round(
         map_range(
             angle,
-            settings.motor_min_angle + (tuning_sensitivity / settings.tuning_near),
-            settings.motor_max_angle - (tuning_sensitivity / settings.tuning_near),
+            settings.motor_min_angle + (tuning_sensitivity * settings.tuning_near),
+            settings.motor_max_angle - (tuning_sensitivity * settings.tuning_near),
             0,
             total_station_num - 1,
         )
@@ -378,7 +384,7 @@ def play_static(play):
             pygame.mixer.Channel(1).play(static_sounds[random_snd])
             if volume > 0:
                 pygame.mixer.Channel(1).set_volume(
-                    max(round(volume / settings.static_volume, 3), settings.static_volume_min))
+                    max(round(volume * settings.static_volume, 3), settings.static_volume_min))
             else:
                 pygame.mixer.Channel(1).set_volume(0)
     else:
@@ -411,7 +417,7 @@ def tuning():
             tuning_locked = True
 
     # Start playing audio with static when the needle get near a station position
-    elif lock_on_tolerance < range_to_station < tuning_sensitivity / settings.tuning_near:
+    elif lock_on_tolerance < range_to_station < tuning_sensitivity * settings.tuning_near:
         tuning_volume = round(volume / range_to_station, 3)
         pygame.mixer.music.set_volume(tuning_volume)
 
@@ -500,27 +506,10 @@ def select_band(new_band_num, restore_angle = None):
             station_name = radio_station[0]
             stations.append(RadioClass(station_name, station_folder, radio_station))
 
-        led_num = round(map_range(new_band_num, 0, total_station_num, settings.led_qty, 0))
-        send_uart("C", "LED", str(led_num))
+        led_num = round(map_range(new_band_num, 0, total_station_num, settings.gauge_pixel_qty, 0))
+        send_uart("C", "Gauge", str(led_num), 1)
         time.sleep(0.5)  # Give the and LED time to show
-        send_uart("C", "Sweep")
-
-        # wait for sweep to finish or 5 seconds
-        now = time.time()
-        sweep_done = False
-        while not sweep_done or time.time() - now > 5:
-            uart_message = receive_uart()
-            if uart_message:
-                try:
-                    if uart_message[0] == "C":
-                        if len(uart_message) > 1 and uart_message[1]:
-                            if uart_message[1] == "Sweep Done":
-                                sweep_done = True
-                                print("UART: Sweep Done", restore_angle)
-                except Exception as error:
-                    print("UART Error:", error)
-        if restore_angle:
-            set_motor(restore_angle)
+        send_uart("C", "Sweep", restore_angle)
 
 
 def prev_band():
@@ -546,13 +535,14 @@ def next_band():
 
 def wait_for_pico():
     global pico_state, heartbeat_time
-    print("Waiting for Pi Pico heartbeat")
+    print("Waiting: Waiting for Pi Pico heartbeat")
     while not pico_state:
         if setup.gpio_available:
             check_gpio_input()
         now = time.time()
         if now - heartbeat_time > settings.heartbeat_interval:
             send_uart("H", "Zero")
+            print("Waiting: Sending Heartbeat to Pico")
             heartbeat_time = now
         uart_message = receive_uart()
         if uart_message:

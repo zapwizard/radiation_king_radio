@@ -8,11 +8,36 @@ import busio
 import analogio
 import time
 
+# Uart Related
+uart_heartbeat_interval = 3
+pi_zero_heartbeat_timeout = 15 # must be greater than the heartbeat interval on pi zero
+uart_timeout = 0.01
+
+
 #LED related:
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
-led_max_brightness = 100
 led_heartbeat_interval = 1
+
+
+#Neopixel related
+#Template: pixels[0] = (RED, GREEN, BLUE, WHITE) # 0-255
+neopixel_set_timeout = 1 # Amount of time a LED still stay on before resetting
+neopixel_range = 255 # Number of steps during fade on/off
+
+gauge_neopixel_order = neopixel.GRBW
+gauge_pixel_qty = 8
+gauge_pixel_color = (160, 32, 0, 38) # Use to alter the default color
+gauge_pixel_max_brightness = 0.3 # Sets the entire strip max brightness
+gauge_pixels = neopixel.NeoPixel(board.GP15, gauge_pixel_qty, brightness=gauge_pixel_max_brightness, auto_write=True, pixel_order=gauge_neopixel_order)
+gauge_pixels.fill((0, 0, 0, 0))
+
+aux_neopixel_order = neopixel.GRBW
+aux_pixel_qty = 5
+aux_pixel_color = (160, 16, 0, 0) # Use to alter the default color
+aux_pixel_max_brightness = 1 # Sets the entire strip max brightness
+aux_pixels = neopixel.NeoPixel(board.GP6, aux_pixel_qty, brightness=aux_pixel_max_brightness, auto_write=True, pixel_order=aux_neopixel_order)
+aux_pixels.fill((0, 0, 0, 0))
 
 
 # ADC related:
@@ -22,9 +47,9 @@ ADC_1_Min = 1024 # Deliberately high to allow for self-calibration
 ADC_1_Max = 2048 # Deliberately low to allow for self-calibration
 ADC_0 = analogio.AnalogIn(board.A0) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
 ADC_1 = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer for the tuning control.
-ADC_0_Smoothing = 0.7  # Float between 0 and 1. Lower means more smoothing
-ADC_1_Smoothing = 0.15  # Float between 0 and 1. Lower means more smoothing
-ADC_1_dead_zone = 0.6
+ADC_0_Smoothing = 0.8  # Float between 0 and 1. Lower means more smoothing
+ADC_1_Smoothing = 0.08  # Float between 0 and 1. Lower means more smoothing
+angle_dead_zone = 0.6 # Float angle, angle has to change by more than this before the needle move. Numbers great than 1 make for jumpy needle movement.
 
 
 #Buttons:
@@ -42,19 +67,13 @@ button_number = None
 button_held_state= [False] * button_quantity
 button_event_type = None
 
+
 #Switches:
 switches = keypad.Keys((board.GP8,board.GP9),value_when_pressed=False, pull=True, interval=0.1)
 switch_quantity = 2
-switch_ccw = 1
-switch_cw = 0
+switch_ccw = True # Invert if your switch behavior seems backwards
+switch_cw = not switch_ccw
 
-#Neopixel related
-#Template: pixels[0] = (RED, GREEN, BLUE) # 0-255
-neopixel_order = neopixel.GRBW
-neopixel_quantity = 8
-pixels = neopixel.NeoPixel(board.GP15, neopixel_quantity, brightness=0.1, auto_write=True, pixel_order=neopixel_order)
-pixels.fill((0,0,0,0))
-neopixel_set_timeout = 1
 
 #Motor controller related
 pwm_frequency = 50000
@@ -78,9 +97,5 @@ motor_ref_voltage = 3.3
 motor_min_angle = 14 # This must match the settings on the Zero
 motor_max_angle = 168
 motor_mid_point = (motor_max_angle - motor_min_angle) / 2 + 15
-
-# Uart Related
-uart_heartbeat_interval = 3
-pi_zero_heartbeat_timeout = 15 # must be greater than the heartbeat interval on pi zero
-uart_timeout = 0.01
+motor_range = motor_max_angle - motor_min_angle
 

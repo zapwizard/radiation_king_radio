@@ -35,6 +35,7 @@ Inside each radio band folder you will place sub-folders with audio files inside
 See the "ZZ_test_stations" folder for an example. There must be at least two radio stations inside a radio band folder.
 
 The program will only look for .OGG audio files. The OGG format was selected to make the metadata processing optimized, as well as take up less CPU. I have found fre:ac to be a good fast convertor.
+I recommend normalizing your audio library before loading it onto the radio.
 
 Prefixing the names of the radio station folders with 00, 01 , 02 etc.. will set their order on the dial. Similar naming for songs is required for ordered file playback.
 
@@ -113,4 +114,5 @@ If you use a linear pot for both, adding a 680ohm resistor to one the ground leg
 ##Neopixels:
 An array of 8 Neopixels are used to light up the gauge display. As you change bands, the a signle will light up briefly to indicate which band number you are on.
 
-
+#Licence:
+Licence: Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)

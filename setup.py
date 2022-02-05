@@ -85,7 +85,7 @@ if PI:
         # Use a timeout of zero so we don't delay while waiting for a message.
 
         uart = serial.Serial(settings.serial_port, settings.buad_rate, timeout=settings.uart_timeout)
-        print("Success: Opened UART port:", uart.name)  # check which port was really used
+        print("Startup: Opened UART port:", uart.name)  # check which port was really used
         uart.write(b'I,Serial Start\n')  # write a string
     except Exception as e:
         _, err, _ = sys.exc_info()
