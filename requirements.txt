@@ -2,9 +2,13 @@
 
 pygame
 mutagen
-
-
 buttonshim
+numpy
+matplotlib
+PyGObject
+pyserial
+pyudev
+
 
 # Bluetooth (I never got this working with volume control, perhaps you can)
 # https://thecodeninja.net/2016/06/bluetooth-audio-receiver-a2dp-sink-with-raspberry-pi/
@@ -12,13 +16,7 @@ buttonshim
 # http://bluetooth-pentest.narod.ru/software/bluetooth_class_of_device-service_generator.html
 # https://itectec.com/ubuntu/ubuntu-bluez5-cannot-connect-to-a-paired-bluetooth-device-on-ubuntu-17-10/
 # https://gist.github.com/spmp/4be4b6c9754367cdb2da6cf60aad3da9
+# https://gist.github.com/oleq/24e09112b07464acbda1
 # pulseaudio-module-bluetooth
 # bluez-tools
 # pybluez
-
-# https://gist.github.com/oleq/24e09112b07464acbda1
-numpy
-matplotlib
-PyGObject
-pyserial
-pyudev

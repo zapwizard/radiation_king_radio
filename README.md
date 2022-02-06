@@ -26,26 +26,32 @@ This is still at work in progress. [See the project log](https://www.therpf.com/
 -Ultrasonic Remote control
 
 ## Audio Folders:
+### Audio Files:
+The program will only look for .OGG audio files. The OGG format was selected to make the metadata processing optimized, as well as take up less CPU.
+
+I recommend using [Foobar2000](https://www.foobar2000.org/) along with [oggenc2.exe](https://www.rarewares.org/ogg-oggenc.php) as you can also normalize the files at conversion time.
+First scan your library to apply Replaygain tags. Then convert the files using Foobar2000's convert command to apply Replaygain offset to the files while also converting them to .OGG
+I used the "apply gain without clipping" option.
+
 ### Band Folders:
-The audio folders first have a "radio band" folder. Think of this like AM, FM, Shortwave, etc...
-These are single folders that contain multiple sub-folders with audio files inside. Name the folders with 00, 01, 02, etc... at the front in order to set the order of the radio bands. Example folders have been included.
+The audio folders first have a "radio band" folder. Think of this like sort of like AM, FM, Shortwave, etc...
+In actuality, it works out best to use the bands for things like "Fallout 4 stations", "Fallout Mod Stations", "Holiday Stations", etc...
+Prefix the name of the folders with 00, 01, 02, etc... to set the order of the radio bands. Example folders have been included.
 
 ### Station Folders:
-Inside each radio band folder you will place sub-folders with audio files inside. Each of these become a "Radio Station"
+Inside each radio band folder you will place sub-folders with audio files inside. Each folder will become a "Radio Station"
 See the "ZZ_test_stations" folder for an example. There must be at least two radio stations inside a radio band folder.
 
-The program will only look for .OGG audio files. The OGG format was selected to make the metadata processing optimized, as well as take up less CPU. I have found fre:ac to be a good fast convertor.
-I recommend normalizing your audio library before loading it onto the radio.
+Prefixing the names of the radio station folders with 00, 01, 02, etc... will set the order on the dial. Similar prefix naming of song files is required for ordered file playback.
 
-Prefixing the names of the radio station folders with 00, 01 , 02 etc.. will set their order on the dial. Similar naming for songs is required for ordered file playback.
+The software will automatically spread the stations evenly across the dial. The amount of stations that can practically fit will depend on how far your dial can turn.
+For example the dial on my design can move 150 degrees. So if there are 10 radio stations they will end up about 15 degrees apart on the dial. 
 
-The software will automatically spread the stations across the dial. The amount of stations that can practically fit will depend on how far your dial can turn.
-For example the dial on mine can move 150 degrees. If I have 10 radio stations they will end up about 15 degrees apart on the dial. 
 
 ## station.ini files:
-Each radio station folder should have a file named "Station.ini". But is not required.
-This contains the radio station name, as well as whether the radio station should have ordered or random playback. 
-If the file is missing it will be created upon cache generation. The below data is required if you want ordered playback.
+Each radio station folder should have a file named "Station.ini". 
+This contains the radio station name, as well as whether the radio station should have ordered or random playback.
+If the file is missing it will be created upon cache generation. The below data is required if you require ordered playback.
 
 Example:
 	[metadata]
@@ -55,12 +61,13 @@ Example:
 #Software setup:
 ## settings.py file:
 This is a file that has settings you may want to tweak. Such as the volume of the static background sounds, and whether to re-build the cache files.
-Each time you alter the audio files you should enable caching, reboot, and then disable caching after boot is complete.
+Each time you alter the audio files you should enable caching, reboot, wait for the cache process to complete, and then disable caching after boot is complete.
 You can operate the radio with caching always enabled, but it will make the boot up take a very long time.
 
 ## Pi Pico files:
-The pi_pico_files folder contains the code for the Pi Pico. You must have already loaded CircuitPython 7.1.1 or later prior to connecting it to the Pi Zero via USB.
-The Pi Zero code will automatically copy the files needed to the Pi Pico. The Pi Pico will send its serial output to the Pi Zero over UART, but you won't see the messages on the Zero until the read_uart loops occurs. To see USB serial playback you need to disable the print() command in the code.py files.
+The pi_pico_files folder contains the code for the Pi Pico. You must have already loaded CircuitPython 7.1.1 or later prior to connecting the Pi Pico to the Pi Zero over USB.
+The Pi Zero code will automatically copy the files needed to the Pi Pico. 
+The Pi Pico will send its serial output to the Pi Zero over USB UART. To see USB serial playback otherwise you need to disable the print() command in the code.py files.
 
 ## Requirements:
 Make sure and install all the requirements listed in requirements.txt on your Pi Zero.

@@ -7,7 +7,6 @@ from adafruit_simplemath import map_range, constrain
 import atexit
 import usb_cdc
 import pico_settings as settings
-import analogio
 
 ## globals:
 # ADC Related:
@@ -15,6 +14,7 @@ ADC_0_Prev_Value = 0
 ADC_0_smoothed = 0
 motor_angle_prev = 0
 ADC_1_smoothed = 0
+adc_1_dead_zone = settings.TUNING_DEAD_ZONE
 
 #Switch related:
 volume_switch_state = None
@@ -29,8 +29,8 @@ pi_state = False
 led_heartbeat_prev = 0
 uart_heartbeat_time = 0
 pi_zero_heartbeat_time = 0
-usb_cdc.console.timeout = settings.uart_timeout
-usb_cdc.data.timeout = settings.uart_timeout
+usb_cdc.console.timeout = settings.UART_TIMEOUT
+usb_cdc.data.timeout = settings.UART_TIMEOUT
 uart_line = None
 
 def receive_uart():
@@ -54,8 +54,9 @@ def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
         _, err, _ = sys.exc_info()
         print("UART Error: (%s)" % err, error)
 
-#def print(*args, **kwargs): #Disable this for local USB print debugging
-#    send_uart("i",*args,**kwargs)
+ #Comment this method out for local USB print debugging
+def print(*args, **kwargs):
+    send_uart("I",*args,**kwargs)
 
 def set_motor(angle, disable = False, from_uart = False):  # Set angle in degrees
     global motor_angle
@@ -64,7 +65,7 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
         motor_angle = angle
 
         # Keep needle within the preset limits
-        angle = constrain(angle, settings.motor_min_angle, settings.motor_max_angle)
+        angle = constrain(angle, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
         if not from_uart:
             send_uart("M", str(angle))  # Send angle up to the Pi Zero
 
@@ -72,11 +73,11 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
         sin_radian = math.sin(radian)  # Calculate sin
         cos_radian = math.cos(radian)  # Calculate cos
 
-        sin_coil_voltage = round(abs(sin_radian) * settings.motor_ref_voltage, 4)  # Calculate voltage needed on coil.
-        sin_coil_pwm = round(map_range(sin_coil_voltage, 0, settings.motor_ref_voltage, 0, settings.pwm_max_value)) # Determine PWM output
+        sin_coil_voltage = round(abs(sin_radian) * settings.MOTOR_REF_VOLTAGE, 4)  # Calculate voltage needed on coil.
+        sin_coil_pwm = round(map_range(sin_coil_voltage, 0, settings.MOTOR_REF_VOLTAGE, 0, settings.PWM_MAX_VALUE)) # Determine PWM output
 
-        cos_coil_voltage = round(abs(cos_radian) * settings.motor_ref_voltage, 4)  # Calculate voltage need on coil.
-        cos_coil_pwm = round(map_range(cos_coil_voltage, 0, settings.motor_ref_voltage, 0, settings.pwm_max_value)) # Determine PWM output
+        cos_coil_voltage = round(abs(cos_radian) * settings.MOTOR_REF_VOLTAGE, 4)  # Calculate voltage need on coil.
+        cos_coil_pwm = round(map_range(cos_coil_voltage, 0, settings.MOTOR_REF_VOLTAGE, 0, settings.PWM_MAX_VALUE)) # Determine PWM output
 
         #print("Angle:",angle, "\tSinV:", sin_coil_voltage, "\tSinPWM:", sin_coil_pwm, "\tCosV", cos_coil_voltage, "\tCosPWM=",cos_coil_pwm)
 
@@ -122,53 +123,54 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
 def test_motor():
     set_motor(0)
     time.sleep(1)
-    for angle in range(settings.motor_min_angle, settings.motor_max_angle):
+    for angle in range(settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX):
         set_motor(angle)
         time.sleep(0.05)
-    set_motor(settings.motor_min_angle)
+    set_motor(settings.MOTOR_ANGLE_MIN)
     time.sleep(3)
-    set_motor(settings.motor_mid_point)
+    set_motor(settings.MOTOR_MID_POINT)
     time.sleep(3)
-    set_motor(settings.motor_max_angle)
+    set_motor(settings.MOTOR_ANGLE_MAX)
     time.sleep(3)
 
 
 def blink_led():
     settings.led.value = not settings.led.value
 
+
 def check_buttons():
     button_event = settings.buttons.events.get()
     time_ticks = supervisor.ticks_ms()
-    for button_num, press_time in enumerate(settings.button_press_time):
-        if press_time and time_ticks > press_time + settings.button_long_press:
+    for button_num, press_time in enumerate(settings.BUTTON_PRESS_TIME):
+        if press_time and time_ticks > press_time + settings.BUTTON_LONG_PRESS:
             #print("Debug: Button", button_num, "held for", button_long_press, "ms", time_ticks)
-            settings.button_press_time[button_num] = None
+            settings.BUTTON_PRESS_TIME[button_num] = None
             settings.button_held_state[button_num] = True
-            return button_num, settings.button_held
+            return button_num, settings.BUTTON_HELD
 
     if button_event:
         if button_event.pressed:
             #print("Debug: Button",button_event.key_number,"Pressed at",button_event.timestamp)
-            settings.button_press_time[button_event.key_number] = button_event.timestamp
-            return button_event.key_number, settings.button_pressed
+            settings.BUTTON_PRESS_TIME[button_event.key_number] = button_event.timestamp
+            return button_event.key_number, settings.BUTTON_PRESSED
 
         if button_event.released:
-            settings.button_press_time[button_event.key_number] = None
+            settings.BUTTON_PRESS_TIME[button_event.key_number] = None
             if settings.button_held_state[button_event.key_number] is True:
                 #print("Debug: Button",button_event.key_number,"Released after a hold",button_event.timestamp)
                 settings.button_held_state[button_event.key_number] = False
             else:
                 #print("Debug: Button",button_event.key_number,"Released at",button_event.timestamp)
-                return button_event.key_number, settings.button_released
+                return button_event.key_number, settings.BUTTON_RELEASED
     return None, None
 
 def check_switches():
     switch_event = settings.switches.events.get()
     if switch_event:
         if switch_event.pressed:
-            return switch_event.key_number, settings.switch_cw
+            return switch_event.key_number, settings.SWITCH_CW
         elif switch_event.released:
-            return switch_event.key_number, settings.switch_ccw
+            return switch_event.key_number, settings.SWITCH_CCW
     return None, None
 
 def check_adc():
@@ -181,16 +183,17 @@ def check_adc():
     if tuning_switch_state:
         check_tuning_knob()
 
+
 def check_volume_knob():
     global ADC_0_Prev_Value, ADC_0_smoothed
-    ADC_0_Value = settings.ADC_0.value
+    adc_0_value = settings.ADC_0.value
 
     # ADC_0 Self Calibration
-    if ADC_0_Value < settings.ADC_0_Min: settings.ADC_0_Min = ADC_0_Value
-    if ADC_0_Value > settings.ADC_0_Max: settings.ADC_0_Max = ADC_0_Value
+    if adc_0_value < settings.ADC_0_MIN: settings.ADC_0_MIN = adc_0_value
+    if adc_0_value > settings.ADC_0_MAX: settings.ADC_0_MAX = adc_0_value
 
-    ADC_0_smoothed = settings.ADC_0_Smoothing * ADC_0_Value + (1 - settings.ADC_0_Smoothing) * ADC_0_smoothed
-    volume = round(map_range(ADC_0_smoothed, settings.ADC_0_Min, settings.ADC_0_Max, 0, 1), 3)
+    ADC_0_smoothed = settings.ADC_0_SMOOTHING * adc_0_value + (1 - settings.ADC_0_SMOOTHING) * ADC_0_smoothed
+    volume = round(map_range(ADC_0_smoothed, settings.ADC_0_MIN, settings.ADC_0_MAX, 0, 1), 3)
     if volume != ADC_0_Prev_Value:
         ADC_0_Prev_Value = volume
         send_uart("V", str(ADC_0_Prev_Value))
@@ -198,19 +201,22 @@ def check_volume_knob():
 
 
 def check_tuning_knob():
-    global motor_angle_prev, ADC_1_smoothed
-    ADC_1_Value = settings.ADC_1.value
+    global motor_angle_prev, ADC_1_smoothed, adc_1_dead_zone
+    adc_1_value = settings.ADC_1.value
 
     #ADC_1 Self Calibration
-    if ADC_1_Value < settings.ADC_1_Min: settings.ADC_1_Min = ADC_1_Value
-    if ADC_1_Value > settings.ADC_1_Max: settings.ADC_1_Max = ADC_1_Value
+    if adc_1_value < settings.ADC_1_MIN: settings.ADC_1_MIN = adc_1_value
+    if adc_1_value > settings.ADC_1_MAX: settings.ADC_1_MAX = adc_1_value
 
-    ADC_1_smoothed = settings.ADC_1_Smoothing * ADC_1_Value + (1 - settings.ADC_1_Smoothing) * ADC_1_smoothed
-    angle = round(map_range(ADC_1_smoothed, settings.ADC_1_Min, settings.ADC_1_Max, settings.motor_min_angle,
-                            settings.motor_max_angle), 1)
-    if angle > motor_angle_prev + settings.angle_dead_zone or angle < motor_angle_prev - settings.angle_dead_zone:
+    ADC_1_smoothed = settings.ADC_1_SMOOTHING * adc_1_value + (1 - settings.ADC_1_SMOOTHING) * ADC_1_smoothed
+    angle = round(map_range(ADC_1_smoothed,
+                            settings.ADC_1_MIN, settings.ADC_1_MAX,
+                            settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX), 1)
+    if angle > motor_angle_prev + adc_1_dead_zone or angle < motor_angle_prev - adc_1_dead_zone:
         motor_angle_prev = angle
         set_motor(motor_angle_prev)
+        adc_1_dead_zone = settings.TUNING_DEAD_ZONE # Reset the deadzone upon manual knob movement.
+        #print("Debug: Tuning:",angle, adc_1_value, ADC_1_smoothed)
 
 
 def resume_from_standby():
@@ -232,31 +238,33 @@ def standby():
 
 def sweep(restore_angle):
     set_pixels(off=True)
-    for brightness in range(settings.neopixel_range):
-        angle = map_range(brightness, 0, settings.neopixel_range, settings.motor_min_angle, settings.motor_max_angle)
+    for brightness in range(settings.NEOPIXEL_RANGE):
+        angle = map_range(brightness, 0, settings.NEOPIXEL_RANGE, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
         set_motor(angle)
-        set_pixels(brightness / settings.neopixel_range)
+        set_pixels(brightness / settings.NEOPIXEL_RANGE)
         #print("Debug: sweep:", angle, brightness)
         #time.sleep(0.01)
     if restore_angle:
+        time.sleep(0.2)
+        print("Sweep: restore_angle=", restore_angle)
         set_motor(restore_angle)
 
 def soft_stop():
     global motor_angle
 
-    if motor_angle < settings.motor_mid_point:
-        for angle in range(round(motor_angle), round(settings.motor_mid_point)):
+    if motor_angle < settings.MOTOR_MID_POINT:
+        for angle in range(round(motor_angle), round(settings.MOTOR_MID_POINT)):
             set_motor(angle)
-            time.sleep(0.005)
+            time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
     else:
-        for angle in range(round(motor_angle), round(settings.motor_mid_point), -1):
+        for angle in range(round(motor_angle), round(settings.MOTOR_MID_POINT), -1):
             set_motor(angle)
-            time.sleep(0.005)
-    for brightness in range(settings.neopixel_range, 0, -1):
-        set_pixels(brightness / settings.neopixel_range)
-        time.sleep(0.005)
+            time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
+    for brightness in range(settings.NEOPIXEL_RANGE, 0, -1):
+        set_pixels(brightness / settings.NEOPIXEL_RANGE)
+        time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
     set_pixels(off=True)
-    set_motor(settings.motor_mid_point, disable = True)
+    set_motor(settings.MOTOR_MID_POINT, disable = True)
 
 
 def set_pixels(brightness=None, pixel=None, off=False, channel=None):
@@ -265,8 +273,8 @@ def set_pixels(brightness=None, pixel=None, off=False, channel=None):
         settings.aux_pixels.fill((0, 0, 0, 0))
         return
     if brightness:
-        gauge_color = tuple(int(x * brightness) for x in settings.gauge_pixel_color)
-        aux_color = tuple(int(x * brightness) for x in settings.aux_pixel_color)
+        gauge_color = tuple(int(x * brightness) for x in settings.GAUGE_PIXEL_COLOR)
+        aux_color = tuple(int(x * brightness) for x in settings.AUX_PIXEL_COLOR)
         if channel == "Gauge":
             if off:
                 settings.gauge_pixels.fill((0, 0, 0, 0))
@@ -290,8 +298,8 @@ def set_pixels(brightness=None, pixel=None, off=False, channel=None):
             settings.aux_pixels.fill(aux_color)
 
     else:
-        settings.gauge_pixels.fill(settings.gauge_pixel_color)
-        settings.aux_pixels.fill(settings.aux_pixel_color)
+        settings.gauge_pixels.fill(settings.GAUGE_PIXEL_COLOR)
+        settings.aux_pixels.fill(settings.AUX_PIXEL_COLOR)
 
 def wait_for_pi():
     global pi_state, pi_zero_heartbeat_time, uart_heartbeat_time
@@ -303,12 +311,15 @@ def wait_for_pi():
         if uart_message:
             print("Waiting: UART echo:",uart_message)
             try:
-                if uart_message[0] == "H":
-                    if uart_message[1] and len(uart_message) > 1:
-                        if uart_message[1] == "Zero":
-                            pi_state = True
-                            pi_zero_heartbeat_time = time.time()
-                            print("From Zero: Pi Zero Heartbeat received")
+                if (
+                    uart_message[0] == "H"
+                    and uart_message[1]
+                    and len(uart_message) > 1
+                    and uart_message[1] == "Zero"
+                ):
+                    pi_state = True
+                    pi_zero_heartbeat_time = time.time()
+                    print("From Zero: Pi Zero Heartbeat received")
             except Exception as error:
                 print("Error: Uart,", error)
         time.sleep(0.1)
@@ -316,7 +327,7 @@ def wait_for_pi():
 
 def buttons():
     button_number, button_event_type = check_buttons()
-    if button_event_type == settings.button_released:
+    if button_event_type == settings.BUTTON_RELEASED:
         if button_number == 0:
             print("Event: Released 0, Rewind")
             send_uart("B", "1", "0")
@@ -336,7 +347,7 @@ def buttons():
             print("Event: Released 4, Fast Forward")
             send_uart("B", "1", "4")
 
-    if button_event_type == settings.button_held:
+    if button_event_type == settings.BUTTON_HELD:
         if button_number == 0:
             print("Event: Held 0, Previous song")
             send_uart("B", "2", "0")
@@ -357,10 +368,11 @@ def buttons():
             print("Event: Held 4, Next Song")
             send_uart("B", "2", "4")
 
+
 def switches():
     global volume_switch_state, tuning_switch_state
     switch_number, switch_event_type = check_switches()
-    if switch_event_type is settings.switch_ccw:
+    if switch_event_type is settings.SWITCH_CCW:
         if switch_number == 0:
             print("Event: Switch 0, Off")
             volume_switch_state = False
@@ -369,7 +381,7 @@ def switches():
             print("Event: Switch 1, Off")
             tuning_switch_state = False
 
-    if switch_event_type == settings.switch_cw:
+    if switch_event_type == settings.SWITCH_CW:
         if switch_number == 0:
             print("Event: Switch 0, On")
             volume_switch_state = True
@@ -378,11 +390,11 @@ def switches():
             print("Event: Switch 1, On")
             tuning_switch_state = True
 
+
 @atexit.register
 def exit_script():
     print("Exiting")
     #settings.serial.Close()
-
 
 print("Startup: Pi Pico Started")
 # Wait for Pi Zero due to its slower boot up time
@@ -396,21 +408,20 @@ while not volume_switch_state:
     blink_led()
 
 switches() # Ran twice to catch tuning knob startup setting
-
 resume_from_standby()
 
 while True:
     now = time.time()
 
-    if now - led_heartbeat_prev > settings.led_heartbeat_interval:
+    if now - led_heartbeat_prev > settings.LED_HEARTBEAT_INTERVAL:
             blink_led()
             led_heartbeat_prev = now
 
-    if now - uart_heartbeat_time > settings.uart_heartbeat_interval:
+    if now - uart_heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
             send_uart("H", "Pico")
             uart_heartbeat_time = now
 
-    if now - pi_zero_heartbeat_time > settings.pi_zero_heartbeat_timeout:
+    if now - pi_zero_heartbeat_time > settings.PI_ZERO_HEARTBEAT_TIMEOUT:
         print("Timeout: Pi Zero Heartbeat not received")
         pi_zero_heartbeat_time = now
         pi_state = False
@@ -418,13 +429,12 @@ while True:
         wait_for_pi()
 
     switches()
+
     if on_off_state:
         check_adc()
         buttons()
 
-
     uart_message = receive_uart()
-
     if uart_message:
         #print("UART Received:",uart_message)
         try:
@@ -446,6 +456,7 @@ while True:
                 #print("Message:",uart_message)
                 if len(uart_message) > 1 and uart_message[1]:
                     print("From Zero: New motor angle",uart_message[1])
+                    adc_1_dead_zone = settings.DIGITAL_TUNING_DEAD_ZONE
                     set_motor(eval(uart_message[1]),from_uart = True)
 
             #Other Commands
@@ -470,5 +481,3 @@ while True:
 
         except Exception as error:
             print("Uart Error:",error)
-
-

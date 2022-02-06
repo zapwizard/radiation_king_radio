@@ -4,85 +4,88 @@ import keypad
 import digitalio
 import neopixel
 import pwmio
-import busio
 import analogio
-import time
+#import busio
 
 # Uart Related
-uart_heartbeat_interval = 3
-pi_zero_heartbeat_timeout = 15 # must be greater than the heartbeat interval on pi zero
-uart_timeout = 0.01
-
+UART_HEARTBEAT_INTERVAL = 3
+PI_ZERO_HEARTBEAT_TIMEOUT = 15 # must be greater than the heartbeat interval on pi zero
+UART_TIMEOUT = 0.01
 
 #LED related:
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
-led_heartbeat_interval = 1
-
+LED_HEARTBEAT_INTERVAL = 1
 
 #Neopixel related
 #Template: pixels[0] = (RED, GREEN, BLUE, WHITE) # 0-255
-neopixel_set_timeout = 1 # Amount of time a LED still stay on before resetting
-neopixel_range = 255 # Number of steps during fade on/off
+NEOPIXEL_SET_TIMEOUT = 1 # Amount of time a LED still stay on before resetting
+NEOPIXEL_RANGE = 255 # Number of steps during fade on/off
+NEOPIXEL_DIM_INTERVAL = 0.005
 
 gauge_neopixel_order = neopixel.GRBW
-gauge_pixel_qty = 8
-gauge_pixel_color = (160, 32, 0, 38) # Use to alter the default color
-gauge_pixel_max_brightness = 0.3 # Sets the entire strip max brightness
-gauge_pixels = neopixel.NeoPixel(board.GP15, gauge_pixel_qty, brightness=gauge_pixel_max_brightness, auto_write=True, pixel_order=gauge_neopixel_order)
+GAUGE_PIXEL_QTY = 8
+GAUGE_PIXEL_COLOR = (160, 32, 0, 38) # Use to alter the default color
+GAUGE_PIXEL_MAX_BRIGHTNESS = 0.3 # Sets the entire strip max brightness
+gauge_pixels = neopixel.NeoPixel(board.GP15, GAUGE_PIXEL_QTY, brightness=GAUGE_PIXEL_MAX_BRIGHTNESS, auto_write=True, pixel_order=gauge_neopixel_order)
 gauge_pixels.fill((0, 0, 0, 0))
 
 aux_neopixel_order = neopixel.GRBW
-aux_pixel_qty = 5
-aux_pixel_color = (160, 16, 0, 0) # Use to alter the default color
-aux_pixel_max_brightness = 1 # Sets the entire strip max brightness
-aux_pixels = neopixel.NeoPixel(board.GP6, aux_pixel_qty, brightness=aux_pixel_max_brightness, auto_write=True, pixel_order=aux_neopixel_order)
+AUX_PIXEL_QTY = 5
+AUX_PIXEL_COLOR = (160, 16, 0, 0) # Use to alter the default color
+AUX_PIXEL_MAX_BRIGHTNESS = 1 # Sets the entire strip max brightness
+aux_pixels = neopixel.NeoPixel(board.GP6, AUX_PIXEL_QTY, brightness=AUX_PIXEL_MAX_BRIGHTNESS, auto_write=True, pixel_order=aux_neopixel_order)
 aux_pixels.fill((0, 0, 0, 0))
 
 
 # ADC related:
-ADC_0_Min = 1024 # Deliberately high to allow for self-calibration
-ADC_0_Max = 2048 # Deliberately low to allow for self-calibration
-ADC_1_Min = 1024 # Deliberately high to allow for self-calibration
-ADC_1_Max = 2048 # Deliberately low to allow for self-calibration
+ADC_0_MIN = 1024 # Deliberately high to allow for self-calibration
+ADC_0_MAX = 2048 # Deliberately low to allow for self-calibration
+ADC_1_MIN = 1024 # Deliberately high to allow for self-calibration
+ADC_1_MAX = 2048 # Deliberately low to allow for self-calibration
 ADC_0 = analogio.AnalogIn(board.A0) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
 ADC_1 = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer for the tuning control.
-ADC_0_Smoothing = 0.8  # Float between 0 and 1. Lower means more smoothing
-ADC_1_Smoothing = 0.08  # Float between 0 and 1. Lower means more smoothing
-angle_dead_zone = 0.6 # Float angle, angle has to change by more than this before the needle move. Numbers great than 1 make for jumpy needle movement.
+ADC_0_SMOOTHING = 0.8  # Float between 0 and 1. Lower means more smoothing
+ADC_1_SMOOTHING = 0.2  # Float between 0 and 1. Lower means more smoothing
+
+# Float angle, angle has to change by more than this before the needle moves.
+# Numbers great than 1 make for jumpy needle movement.
+# Is overwritten when digital tuning to prevent ADC noise from changing the result.
+TUNING_DEAD_ZONE = 0.5
+DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally tuned.
 
 
 #Buttons:
 buttons = keypad.Keys((board.GP10,board.GP11,board.GP12,board.GP13,board.GP14),value_when_pressed=False, pull=True, interval=0.05)
-button_quantity = 5
-button_short_press = 60
-button_long_press = 2000
-button_press_time = [None] * button_quantity
-button_release_time = [None] * button_quantity
-button_released = 0
-button_pressed = 1
-button_held = 2
-button_state = [None]* button_quantity
+BUTTON_QUANTITY = 5
+BUTTON_SHORT_PRESS = 60 # in ms
+BUTTON_LONG_PRESS = 2000 # in ms
+BUTTON_PRESS_TIME = [None] * BUTTON_QUANTITY
+BUTTON_RELEASE_TIME = [None] * BUTTON_QUANTITY
+BUTTON_RELEASED = 0
+BUTTON_PRESSED = 1
+BUTTON_HELD = 2
+button_state = [None] * BUTTON_QUANTITY
 button_number = None
-button_held_state= [False] * button_quantity
+button_held_state= [False] * BUTTON_QUANTITY
 button_event_type = None
 
 
 #Switches:
 switches = keypad.Keys((board.GP8,board.GP9),value_when_pressed=False, pull=True, interval=0.1)
-switch_quantity = 2
-switch_ccw = True # Invert if your switch behavior seems backwards
-switch_cw = not switch_ccw
+SWITCH_QUANTITY = 2
+SWITCH_CCW = True # Invert if your switch behavior seems backwards
+SWITCH_CW = not SWITCH_CCW
 
 
 #Motor controller related
-pwm_frequency = 50000
-SIN_PWM = pwmio.PWMOut(board.GP21, duty_cycle=0, frequency=pwm_frequency, variable_frequency=False)
+PWM_FREQUENCY = 50000
+SIN_PWM = pwmio.PWMOut(board.GP21, duty_cycle=0, frequency=PWM_FREQUENCY, variable_frequency=False)
 SIN_POS = digitalio.DigitalInOut(board.GP19)
 SIN_POS.direction = digitalio.Direction.OUTPUT
 SIN_NEG = digitalio.DigitalInOut(board.GP18)
 SIN_NEG.direction = digitalio.Direction.OUTPUT
-COS_PWM = pwmio.PWMOut(board.GP20, duty_cycle=0, frequency=pwm_frequency, variable_frequency=False)
+COS_PWM = pwmio.PWMOut(board.GP20, duty_cycle=0, frequency=PWM_FREQUENCY, variable_frequency=False)
 COS_POS = digitalio.DigitalInOut(board.GP17)
 COS_POS.direction = digitalio.Direction.OUTPUT
 COS_NEG = digitalio.DigitalInOut(board.GP16)
@@ -92,10 +95,10 @@ COS_DIRECTION = False
 motor_sin = None
 motor_cos = None
 motor_direction = None
-pwm_max_value = 65535 # 65535 max
-motor_ref_voltage = 3.3
-motor_min_angle = 14 # This must match the settings on the Zero
-motor_max_angle = 168
-motor_mid_point = (motor_max_angle - motor_min_angle) / 2 + 15
-motor_range = motor_max_angle - motor_min_angle
+PWM_MAX_VALUE = 65535 # 65535 max
+MOTOR_REF_VOLTAGE = 3.3
+MOTOR_ANGLE_MIN = 14 # This must match the settings on the Zero
+MOTOR_ANGLE_MAX = 168
+MOTOR_MID_POINT = (MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN) / 2 + 15
+MOTOR_RANGE = MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN
 

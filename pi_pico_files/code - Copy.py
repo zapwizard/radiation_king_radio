@@ -82,8 +82,8 @@ pi_state = False
 led_heartbeat_prev = 0
 uart_heartbeat_time = 0
 pi_zero_heartbeat_time = 0
-usb_cdc.console.timeout = pico_settings.uart_timeout
-usb_cdc.data.timeout = pico_settings.uart_timeout
+usb_cdc.console.timeout = pico_settings.UART_TIMEOUT
+usb_cdc.data.timeout = pico_settings.UART_TIMEOUT
 uart_line = None
 
 def receive_uart():
@@ -114,7 +114,7 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
         motor_angle = angle
 
         # Keep needle within the preset limits
-        angle = constrain(angle, pico_settings.motor_min_angle, pico_settings.motor_max_angle)
+        angle = constrain(angle, pico_settings.MOTOR_ANGLE_MIN, pico_settings.MOTOR_ANGLE_MAX)
         if not from_uart:
             send_uart("M", str(angle))  # Send angle up to the Pi Zero
 
@@ -122,11 +122,11 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
         sin_radian = math.sin(radian)  # Calculate sin
         cos_radian = math.cos(radian)  # Calculate cos
 
-        sin_coil_voltage = round(abs(sin_radian) * pico_settings.motor_ref_voltage, 4)  # Calculate voltage needed on coil.
-        sin_coil_pwm = round(map_range(sin_coil_voltage, 0, pico_settings.motor_ref_voltage, 0, pico_settings.pwm_max_value)) # Determine PWM output
+        sin_coil_voltage = round(abs(sin_radian) * pico_settings.MOTOR_REF_VOLTAGE, 4)  # Calculate voltage needed on coil.
+        sin_coil_pwm = round(map_range(sin_coil_voltage, 0, pico_settings.MOTOR_REF_VOLTAGE, 0, pico_settings.PWM_MAX_VALUE)) # Determine PWM output
 
-        cos_coil_voltage = round(abs(cos_radian) * pico_settings.motor_ref_voltage, 4)  # Calculate voltage need on coil.
-        cos_coil_pwm = round(map_range(cos_coil_voltage, 0, pico_settings.motor_ref_voltage, 0, pico_settings.pwm_max_value)) # Determine PWM output
+        cos_coil_voltage = round(abs(cos_radian) * pico_settings.MOTOR_REF_VOLTAGE, 4)  # Calculate voltage need on coil.
+        cos_coil_pwm = round(map_range(cos_coil_voltage, 0, pico_settings.MOTOR_REF_VOLTAGE, 0, pico_settings.PWM_MAX_VALUE)) # Determine PWM output
 
         #print("Angle:",angle, "\tSinV:", sin_coil_voltage, "\tSinPWM:", sin_coil_pwm, "\tCosV", cos_coil_voltage, "\tCosPWM=",cos_coil_pwm)
 
@@ -172,14 +172,14 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
 def test_motor():
     set_motor(0)
     time.sleep(1)
-    for angle in range(pico_settings.motor_min_angle, pico_settings.motor_max_angle):
+    for angle in range(pico_settings.MOTOR_ANGLE_MIN, pico_settings.MOTOR_ANGLE_MAX):
         set_motor(angle)
         time.sleep(0.05)
-    set_motor(pico_settings.motor_min_angle)
+    set_motor(pico_settings.MOTOR_ANGLE_MIN)
     time.sleep(3)
-    set_motor(pico_settings.motor_mid_point)
+    set_motor(pico_settings.MOTOR_MID_POINT)
     time.sleep(3)
-    set_motor(pico_settings.motor_max_angle)
+    set_motor(pico_settings.MOTOR_ANGLE_MAX)
     time.sleep(3)
 
 
@@ -189,36 +189,36 @@ def blink_led():
 def check_buttons():
     button_event = pico_settings.buttons.events.get()
     time_ticks = supervisor.ticks_ms()
-    for button_num, press_time in enumerate(pico_settings.button_press_time):
-        if press_time and time_ticks > press_time + pico_settings.button_long_press:
+    for button_num, press_time in enumerate(pico_settings.BUTTON_PRESS_TIME):
+        if press_time and time_ticks > press_time + pico_settings.BUTTON_LONG_PRESS:
             #print("Debug: Button", button_num, "held for", button_long_press, "ms", time_ticks)
-            pico_settings.button_press_time[button_num] = None
+            pico_settings.BUTTON_PRESS_TIME[button_num] = None
             pico_settings.button_held_state[button_num] = True
-            return button_num, pico_settings.button_held
+            return button_num, pico_settings.BUTTON_HELD
 
     if button_event:
         if button_event.pressed:
             #print("Debug: Button",button_event.key_number,"Pressed at",button_event.timestamp)
-            pico_settings.button_press_time[button_event.key_number] = button_event.timestamp
-            return button_event.key_number, pico_settings.button_pressed
+            pico_settings.BUTTON_PRESS_TIME[button_event.key_number] = button_event.timestamp
+            return button_event.key_number, pico_settings.BUTTON_PRESSED
 
         if button_event.released:
-            pico_settings.button_press_time[button_event.key_number] = None
+            pico_settings.BUTTON_PRESS_TIME[button_event.key_number] = None
             if pico_settings.button_held_state[button_event.key_number] is True:
                 #print("Debug: Button",button_event.key_number,"Released after a hold",button_event.timestamp)
                 pico_settings.button_held_state[button_event.key_number] = False
             else:
                 #print("Debug: Button",button_event.key_number,"Released at",button_event.timestamp)
-                return button_event.key_number, pico_settings.button_released
+                return button_event.key_number, pico_settings.BUTTON_RELEASED
     return None, None
 
 def check_switches():
     switch_event = pico_settings.switches.events.get()
     if switch_event:
         if switch_event.pressed:
-            return switch_event.key_number, pico_settings.switch_cw
+            return switch_event.key_number, pico_settings.SWITCH_CW
         elif switch_event.released:
-            return switch_event.key_number, pico_settings.switch_ccw
+            return switch_event.key_number, pico_settings.SWITCH_CCW
     return None, None
 
 def check_adc():
@@ -227,7 +227,7 @@ def check_adc():
 
     # Switch 0 disables ADC_0 (To allow for standby mode)
     if switch_0_state:
-        ADC_0_smoothed = pico_settings.ADC_0_Smoothing * pico_settings.ADC_0.value + (1 - pico_settings.ADC_0_Smoothing) * ADC_0_smoothed
+        ADC_0_smoothed = pico_settings.ADC_0_SMOOTHING * pico_settings.ADC_0.value + (1 - pico_settings.ADC_0_SMOOTHING) * ADC_0_smoothed
         volume = round(map_range(ADC_0_smoothed, pico_settings.ADC_Min, pico_settings.ADC_Reported_Max, 0, 1), 3)
         if volume != ADC_0_Prev_Value:
             ADC_0_Prev_Value = volume
@@ -235,10 +235,10 @@ def check_adc():
 
     # Switch 1 disables ADC_1 (To allow for manual tuning)
     if switch_1_state:
-        ADC_1_smoothed = pico_settings.ADC_1_Smoothing * pico_settings.ADC_1.value + (1 - pico_settings.ADC_1_Smoothing) * ADC_1_smoothed
-        angle = round(map_range(ADC_1_smoothed, pico_settings.ADC_Min, pico_settings.ADC_Reported_Max, pico_settings.motor_min_angle,
-                                pico_settings.motor_max_angle), 1)
-        if angle > ADC_1_Prev_Value + pico_settings.angle_dead_zone or angle < ADC_1_Prev_Value - pico_settings.angle_dead_zone:
+        ADC_1_smoothed = pico_settings.ADC_1_SMOOTHING * pico_settings.ADC_1.value + (1 - pico_settings.ADC_1_SMOOTHING) * ADC_1_smoothed
+        angle = round(map_range(ADC_1_smoothed, pico_settings.ADC_Min, pico_settings.ADC_Reported_Max, pico_settings.MOTOR_ANGLE_MIN,
+                                pico_settings.MOTOR_ANGLE_MAX), 1)
+        if angle > ADC_1_Prev_Value + pico_settings.TUNING_DEAD_ZONE or angle < ADC_1_Prev_Value - pico_settings.TUNING_DEAD_ZONE:
             ADC_1_Prev_Value = angle
             set_motor(angle)
             #print("Input: New pot driver angle:",angle)
@@ -262,32 +262,32 @@ def standby():
         soft_stop()
 
 def sweep():
-    for angle in range(pico_settings.motor_min_angle, pico_settings.motor_max_angle):
+    for angle in range(pico_settings.MOTOR_ANGLE_MIN, pico_settings.MOTOR_ANGLE_MAX):
         set_motor(angle)
-        led_brightness = map_range(angle, pico_settings.motor_min_angle, pico_settings.motor_max_angle, 0, pico_settings.gauge_pixel_max_brightness)
+        led_brightness = map_range(angle, pico_settings.MOTOR_ANGLE_MIN, pico_settings.MOTOR_ANGLE_MAX, 0, pico_settings.GAUGE_PIXEL_MAX_BRIGHTNESS)
         pico_settings.gauge_pixels.fill((0, 0, 0, round(led_brightness)))
         time.sleep(0.01)
     send_uart("C","Sweep Done")
 
 def soft_stop():
     global motor_angle
-    for led_brightness in range(pico_settings.gauge_pixel_max_brightness, 0, -1):
-        if motor_angle < pico_settings.motor_mid_point:
-            angle = round(map_range(led_brightness, pico_settings.gauge_pixel_max_brightness, 0, motor_angle, pico_settings.motor_mid_point), 1)
+    for led_brightness in range(pico_settings.GAUGE_PIXEL_MAX_BRIGHTNESS, 0, -1):
+        if motor_angle < pico_settings.MOTOR_MID_POINT:
+            angle = round(map_range(led_brightness, pico_settings.GAUGE_PIXEL_MAX_BRIGHTNESS, 0, motor_angle, pico_settings.MOTOR_MID_POINT), 1)
         else:
-            angle = round(map_range(led_brightness, 0, pico_settings.gauge_pixel_max_brightness, pico_settings.motor_mid_point, motor_angle), 1)
+            angle = round(map_range(led_brightness, 0, pico_settings.GAUGE_PIXEL_MAX_BRIGHTNESS, pico_settings.MOTOR_MID_POINT, motor_angle), 1)
         set_motor(angle)
         pico_settings.gauge_pixels.fill((0, 0, 0, led_brightness))
         time.sleep(0.01)
     pico_settings.gauge_pixels.fill((0, 0, 0, 0))
-    set_motor(pico_settings.motor_mid_point, disable = True)
+    set_motor(pico_settings.MOTOR_MID_POINT, disable = True)
 
 def set_pixel(pixel=None):
     global gauge_pixel_set_time
     if pixel is None:
-        pico_settings.gauge_pixels.fill((0, 0, 0, pico_settings.gauge_pixel_max_brightness))
+        pico_settings.gauge_pixels.fill((0, 0, 0, pico_settings.GAUGE_PIXEL_MAX_BRIGHTNESS))
     else:
-        pico_settings.gauge_pixels.fill((0, 0, 0, round(pico_settings.gauge_pixel_max_brightness / 8)))
+        pico_settings.gauge_pixels.fill((0, 0, 0, round(pico_settings.GAUGE_PIXEL_MAX_BRIGHTNESS / 8)))
         pico_settings.gauge_pixels[pixel] = (0, 0, 0, 255)
         neopixel_set_time = time.time()
 
@@ -315,7 +315,7 @@ def wait_for_pi():
 
 def buttons():
     button_number, button_event_type = check_buttons()
-    if button_event_type == pico_settings.button_released:
+    if button_event_type == pico_settings.BUTTON_RELEASED:
         if button_number == 0:
             print("Event: Released 0, Rewind")
             send_uart("B", "1", "0")
@@ -335,7 +335,7 @@ def buttons():
             print("Event: Released 4, Fast Forward")
             send_uart("B", "1", "4")
 
-    if button_event_type == pico_settings.button_held:
+    if button_event_type == pico_settings.BUTTON_HELD:
         if button_number == 0:
             print("Event: Held 0, Previous song")
             send_uart("B", "2", "0")
@@ -359,7 +359,7 @@ def buttons():
 def switches():
     global volume_switch_state, tuning_switch_state
     switch_number, switch_event_type = check_switches()
-    if switch_event_type is pico_settings.switch_ccw:
+    if switch_event_type is pico_settings.SWITCH_CCW:
         if switch_number == 0:
             print("Event: Switch 0, Off")
             switch_0_state = False
@@ -368,7 +368,7 @@ def switches():
             print("Event: Switch 1, Off")
             switch_1_state = False
 
-    if switch_event_type == pico_settings.switch_cw:
+    if switch_event_type == pico_settings.SWITCH_CW:
         if switch_number == 0:
             print("Event: Switch 0, On")
             switch_0_state = True
@@ -401,15 +401,15 @@ resume_from_standby()
 while True:
     now = time.time()
 
-    if now - led_heartbeat_prev > pico_settings.led_heartbeat_interval:
+    if now - led_heartbeat_prev > pico_settings.LED_HEARTBEAT_INTERVAL:
             blink_led()
             led_heartbeat_prev = now
 
-    if now - uart_heartbeat_time > pico_settings.uart_heartbeat_interval:
+    if now - uart_heartbeat_time > pico_settings.UART_HEARTBEAT_INTERVAL:
             send_uart("H", "Pico")
             uart_heartbeat_time = now
 
-    if now - pi_zero_heartbeat_time > pico_settings.pi_zero_heartbeat_timeout:
+    if now - pi_zero_heartbeat_time > pico_settings.PI_ZERO_HEARTBEAT_TIMEOUT:
         print("Timeout: Pi Zero Heartbeat not received")
         pi_zero_heartbeat_time = now
         pi_state = False
@@ -422,7 +422,7 @@ while True:
         buttons()
 
         if gauge_pixel_set_time:
-            if now - gauge_pixel_set_time > pico_settings.neopixel_set_timeout:
+            if now - gauge_pixel_set_time > pico_settings.NEOPIXEL_SET_TIMEOUT:
                 set_pixel()
                 gauge_pixel_set_time = None
 

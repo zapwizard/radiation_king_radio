@@ -40,7 +40,7 @@ tuning_prev_angle = None
 ADC_0_Prev_Values = []
 ADC_2_Prev_Values = []
 ADC_2_Prev_Value = 0
-motor_angle_prev = settings.motor_min_angle
+motor_angle_prev = settings.MOTOR_MIN_ANGLE
 heartbeat_time = 0
 pico_state = False
 pico_heartbeat_time = 0
@@ -74,17 +74,17 @@ pygame.mixer.Channel(2)
 pygame.mixer.Channel(3)
 pygame.mixer.Channel(4)
 
-snd_off = pygame.mixer.Sound(settings.sound_off)
-snd_on = pygame.mixer.Sound(settings.sound_on)
-snd_band = pygame.mixer.Sound(settings.sound_band_change)
+snd_off = pygame.mixer.Sound(settings.SOUND_OFF)
+snd_on = pygame.mixer.Sound(settings.SOUND_ON)
+snd_band = pygame.mixer.Sound(settings.SOUND_BAND_CHANGE)
 
 
 # Static sound related
 static_sounds = {}
 i = 0
-for file in sorted(os.listdir(settings.static_sound_folder)):
+for file in sorted(os.listdir(settings.STATIC_SOUNDS_FOLDER)):
     if file.endswith(".ogg"):
-        static_sounds[i] = pygame.mixer.Sound("./" + settings.static_sound_folder + "/" + file)
+        static_sounds[i] = pygame.mixer.Sound("./" + settings.STATIC_SOUNDS_FOLDER + "/" + file)
         i += 1
 print("Info: Loaded", len(static_sounds), "static sound files")
 
@@ -95,12 +95,13 @@ def set_motor(angle, manual = False):  # Tell the motor controller what angle to
     if manual:
         send_uart("M", motor_angle)
 
+
 def load_saved_settings():
     saved_ini = configparser.ConfigParser()
     # Load saved settings:
     try:
-        assert os.path.exists(settings.save_file)
-        saved_ini.read(settings.save_file, encoding=None)
+        assert os.path.exists(settings.SAVE_FILE)
+        saved_ini.read(settings.SAVE_FILE, encoding=None)
     except Exception as error:
         print("Warning: While reading the following:", str(error))
 
@@ -126,6 +127,7 @@ def load_saved_settings():
         print("Warning: Could not read radio band setting in", str(error))
     return saved_volume, saved_station_num, saved_band_num
 
+
 def map_range(x, in_min, in_max, out_min, out_max):
     if out_min <= out_max:
         return max(min((x-in_min) * (out_max - out_min) / (in_max-in_min) + out_min, out_max), out_min)
@@ -142,6 +144,7 @@ def blink_led():
         os.system('echo 1 | sudo dd status=none of=/sys/class/leds/led0/brightness')  # led off
         led_state = True
 
+
 def set_volume_level(volume_level, direction=None):
     global volume, volume_time, volume_prev
 
@@ -149,14 +152,14 @@ def set_volume_level(volume_level, direction=None):
         return
 
     if direction == "up":
-        volume_level += settings.volume_step
+        volume_level += settings.VOLUME_STEP
     elif direction == "down":
-        volume_level -= settings.volume_step
+        volume_level -= settings.VOLUME_STEP
 
-    volume = clamp(round(float(volume_level), 3), settings.volume_min, 1)
+    volume = clamp(round(float(volume_level), 3), settings.VOLUME_MIN, 1)
     pygame.mixer.music.set_volume(volume)
     if volume > 0:
-        static_volume = max(round(volume * settings.static_volume,3), settings.static_volume_min)
+        static_volume = max(round(volume * settings.STATIC_VOLUME, 3), settings.STATIC_VOLUME_MIN)
     else:
         static_volume = 0
     pygame.mixer.Channel(1).set_volume(static_volume)
@@ -164,6 +167,7 @@ def set_volume_level(volume_level, direction=None):
 
     volume_time = time.time()
     return volume
+
 
 def clamp(number, minimum, maximum):
     return max(min(maximum, number), minimum)
@@ -177,10 +181,11 @@ def standby():
         send_uart("P", False)  # Tell the Pi Pico we are going to sleep
         if active_station:
             active_station.stop()
-        pygame.mixer.Channel(2).set_volume(settings.effects_volume)
+        pygame.mixer.Channel(2).set_volume(settings.EFFECTS_VOLUME)
         pygame.mixer.Channel(2).play(snd_off)
         save_settings()
         play_static(False)
+
 
 def resume_from_standby():
     global on_off_state, motor_angle,  motor_angle_prev, volume_prev, snd_on
@@ -190,16 +195,16 @@ def resume_from_standby():
         on_off_state = True
         setup.uart.flushInput()
 
-        pygame.mixer.Channel(2).set_volume(settings.effects_volume)
+        pygame.mixer.Channel(2).set_volume(settings.EFFECTS_VOLUME)
         pygame.mixer.Channel(2).play(snd_on)
 
         play_static(True)
 
         volume_settings, station_number, radio_band_number = load_saved_settings()
         set_volume_level(volume_settings)
-        select_band(radio_band_number)
-        print("Tuning: Loading saved station number",station_number)
-        select_station(station_number, True)
+        print("Tuning: Loading saved station number", station_number)
+        select_band(radio_band_number, get_station_pos(station_number))
+        #select_station(station_number, True)
         play_static(False)
 
 
@@ -213,6 +218,7 @@ def check_gpio_input():
     for gpio in setup.gpio_actions.keys():
         if not setup.GPIO.input(gpio):
             handle_action(setup.gpio_actions[gpio])
+
 
 def handle_event(event):
     global on_off_state, active_station
@@ -234,7 +240,7 @@ def handle_event(event):
 
 def get_radio_bands(station_folder):
     print("Startup: Starting folder search in :", station_folder)
-    if settings.reset_cache:
+    if settings.RESET_CACHE:
         print("WARNING: Caching enabled. This can take a while")
     radio_bands = []
 
@@ -274,7 +280,7 @@ def get_radio_bands(station_folder):
                     except Exception as error:
                         print("Error: Could not read:", station_meta_data_file, str(error))
 
-                    if not settings.reset_cache:
+                    if not settings.RESET_CACHE:
                         try:
                             station_data = eval(station_ini_parser.get('cache', 'station_data'))
                             print("Info: Loaded data from", station_meta_data_file)
@@ -352,8 +358,8 @@ def get_station_pos(station_number):
             station_number,
             0,
             total_station_num - 1,
-            settings.motor_min_angle + (tuning_sensitivity * settings.tuning_near),
-            settings.motor_max_angle - (tuning_sensitivity * settings.tuning_near),
+            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity * settings.TUNING_NEAR),
+            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity * settings.TUNING_NEAR),
         ),
         1,
     )
@@ -365,8 +371,8 @@ def get_nearest_station(angle):
     nearest_station = round(
         map_range(
             angle,
-            settings.motor_min_angle + (tuning_sensitivity * settings.tuning_near),
-            settings.motor_max_angle - (tuning_sensitivity * settings.tuning_near),
+            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity * settings.TUNING_NEAR),
+            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity * settings.TUNING_NEAR),
             0,
             total_station_num - 1,
         )
@@ -374,6 +380,7 @@ def get_nearest_station(angle):
     if nearest_station >= total_station_num:
         nearest_station = total_station_num - 1
     return nearest_station
+
 
 # Play a random bit of static
 def play_static(play):
@@ -384,21 +391,25 @@ def play_static(play):
             pygame.mixer.Channel(1).play(static_sounds[random_snd])
             if volume > 0:
                 pygame.mixer.Channel(1).set_volume(
-                    max(round(volume * settings.static_volume, 3), settings.static_volume_min))
+                    max(round(volume * settings.STATIC_VOLUME, 3), settings.STATIC_VOLUME_MIN))
             else:
                 pygame.mixer.Channel(1).set_volume(0)
     else:
         pygame.mixer.Channel(1).stop()
+
 
 # Tune into a station based on the motor angle
 def tuning():
     global motor_angle, volume, static_sounds, tuning_locked, tuning_prev_angle
     global active_station, tuning_volume, tuning_sensitivity, station_num
 
+    if motor_angle == tuning_prev_angle: # Do nothing if the angle is unchanged
+        return
+
     nearest_station_num = get_nearest_station(motor_angle) # Find the nearest radio station to the needle position
     station_position = get_station_pos(nearest_station_num)  # Get the exact angle of that station
     range_to_station = abs(station_position - motor_angle)  # Find the angular distance to nearest station
-    lock_on_tolerance = round(tuning_sensitivity / settings.tuning_lock_on, 1)
+    lock_on_tolerance = round(tuning_sensitivity / settings.TUNING_LOCK_ON, 1)
 
     # Play at volume with no static when needle is close to station position
     if range_to_station <= lock_on_tolerance:
@@ -417,7 +428,7 @@ def tuning():
             tuning_locked = True
 
     # Start playing audio with static when the needle get near a station position
-    elif lock_on_tolerance < range_to_station < tuning_sensitivity * settings.tuning_near:
+    elif lock_on_tolerance < range_to_station < tuning_sensitivity * settings.TUNING_NEAR:
         tuning_volume = round(volume / range_to_station, 3)
         pygame.mixer.music.set_volume(tuning_volume)
 
@@ -441,6 +452,8 @@ def tuning():
             station_num = None
             tuning_locked = False
         play_static(True)
+    tuning_prev_angle = motor_angle
+
 
 def select_station(new_station_num, manual=False):
     global station_num, active_station, total_station_num, motor_angle, tuning_locked, stations
@@ -456,6 +469,7 @@ def select_station(new_station_num, manual=False):
         active_station = stations[new_station_num]
         station_num = new_station_num
         active_station.live_playback()
+
 
 def prev_station():
     global station_num, total_station_num
@@ -493,11 +507,11 @@ def select_band(new_band_num, restore_angle = None):
         radio_band = new_band_num
 
         pygame.mixer.Channel(4).play(snd_band)
-        pygame.mixer.Channel(4).set_volume(volume / settings.band_change_volume)
+        pygame.mixer.Channel(4).set_volume(volume / settings.BAND_CHANGE_VOLUME)
 
         station_list = radio_band_list[new_band_num]
         total_station_num = len(station_list)
-        tuning_sensitivity = round(settings.motor_range / total_station_num, 1)
+        tuning_sensitivity = round(settings.MOTOR_RANGE / total_station_num, 1)
         print("Info: Tuning angle separation =", tuning_sensitivity, "Number of stations:", total_station_num)
 
         stations = []
@@ -506,7 +520,7 @@ def select_band(new_band_num, restore_angle = None):
             station_name = radio_station[0]
             stations.append(RadioClass(station_name, station_folder, radio_station))
 
-        led_num = round(map_range(new_band_num, 0, total_station_num, settings.gauge_pixel_qty, 0))
+        led_num = round(map_range(new_band_num, 0, total_station_num, settings.GAUGE_PIXEL_QUANTITY, 0))
         send_uart("C", "Gauge", str(led_num), 1)
         time.sleep(0.5)  # Give the and LED time to show
         send_uart("C", "Sweep", restore_angle)
@@ -533,6 +547,7 @@ def next_band():
         print("Tuning: Next radio band", radio_band, "/", radio_band_total)
         select_band(new_band, motor_angle)
 
+
 def wait_for_pico():
     global pico_state, heartbeat_time
     print("Waiting: Waiting for Pi Pico heartbeat")
@@ -540,7 +555,7 @@ def wait_for_pico():
         if setup.gpio_available:
             check_gpio_input()
         now = time.time()
-        if now - heartbeat_time > settings.heartbeat_interval:
+        if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
             send_uart("H", "Zero")
             print("Waiting: Sending Heartbeat to Pico")
             heartbeat_time = now
@@ -556,6 +571,7 @@ def wait_for_pico():
             except Exception as error:
                 print("UART Error:", error)
 
+
 def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
     if setup.uart:
         if not setup.uart.is_open:
@@ -566,6 +582,7 @@ def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
         except Exception as error:
             _, err, _ = sys.exc_info()
             print("UART Error: (%s)" % err, error)
+
 
 def receive_uart():
     if not setup.uart:
@@ -587,7 +604,7 @@ def run():
     global clock, on_off_state, snd_on, on_off_state, tuning_locked
     global motor_angle, radio_band_total, radio_band_list, heartbeat_time, pico_heartbeat_time, pico_state
 
-    radio_band_list = get_radio_bands(settings.stations_root_folder)
+    radio_band_list = get_radio_bands(settings.STATIONS_ROOT_FOLDER)
     radio_band_total = len(radio_band_list) - 1
 
     wait_for_pico() # Wait for the pi pico heartbeat
@@ -597,7 +614,7 @@ def run():
     while True:
         now = time.time()
 
-        if now - pico_heartbeat_time > settings.pico_heartbeat_timeout:
+        if now - pico_heartbeat_time > settings.PICO_HEARTBEAT_TIMEOUT:
             standby()
             wait_for_pico()
             pico_heartbeat_time = now
@@ -610,7 +627,7 @@ def run():
                 #print("From UART:", uart_message)
                 # Information output
                 if uart_message[0] == "I" and on_off_state:
-                    print("Pico output:",uart_message[1])
+                    print("Pico serial:",uart_message[1])
 
                 if uart_message[0] == "H" and uart_message[1] == "Pico":
                     pico_heartbeat_time = now
@@ -653,11 +670,12 @@ def run():
         if on_off_state:
             tuning()
 
-        if now - heartbeat_time > settings.heartbeat_interval:
+        if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
             send_uart("H", "Zero")
             heartbeat_time = now
 
         clock.tick(200)
+
 
 def process_button_press(uart_message):
     print("UART: Held button", uart_message[2])
@@ -667,6 +685,7 @@ def process_button_press(uart_message):
         active_station.play_pause()
     if uart_message[2] == "3": next_band()
     if uart_message[2] == "4" and active_station: active_station.fast_forward()
+
 
 def process_button_hold(uart_message):
     print("UART: Released button", uart_message[2])
@@ -726,6 +745,7 @@ class Radiostation:
             if self.song_length and self.start_pos > self.song_length:
                 print("Info: Start_pos longer than song length, skipping songs", round(self.start_pos, 3), round(self.song_length, 3))
 
+                #  Skip ahead until we reach the correct time
                 while self.start_pos > self.song_length:
                     # print("Skipping song", self.song_length)
                     self.files.rotate(-1)
@@ -828,17 +848,17 @@ class Radiostation:
 
     def fast_forward(self):
         global master_start_time
-        self.start_time = self.start_time - settings.fast_forward_increment
+        self.start_time = self.start_time - settings.FAST_FORWARD_INCREMENT
         if self.start_time < master_start_time:
             master_start_time = self.start_time
-        print("Action: Fast forward", settings.fast_forward_increment, self.start_time, master_start_time)
+        print("Action: Fast forward", settings.FAST_FORWARD_INCREMENT, self.start_time, master_start_time)
         self.live_playback()
 
 
     def rewind(self):
         global master_start_time
-        self.start_time = max(self.start_time + settings.rewind_increment, master_start_time)
-        print("Action: Rewind", settings.fast_forward_increment, self.start_time, master_start_time)
+        self.start_time = max(self.start_time + settings.REWIND_INCREMENT, master_start_time)
+        print("Action: Rewind", settings.FAST_FORWARD_INCREMENT, self.start_time, master_start_time)
         self.live_playback()
 
 class RadioClass(Radiostation):
@@ -856,12 +876,12 @@ def save_settings():
     global volume, radio_band, station_num
     saved_ini = configparser.ConfigParser()
     try:
-        assert os.path.exists(settings.save_file)
-        saved_ini.read(settings.save_file)
+        assert os.path.exists(settings.SAVE_FILE)
+        saved_ini.read(settings.SAVE_FILE)
     except Exception as error:
         print("Warning: Error reading the following:", str(error))
     saved_ini["audio"] = {"volume": str(volume), "station": str(station_num), "band": str(radio_band)}
-    with open(settings.save_file, 'w') as configfile:
+    with open(settings.SAVE_FILE, 'w') as configfile:
         saved_ini.write(configfile)
     print("Info: Saved settings: volume: %s, station %s, band %s" % (volume, station_num, radio_band))
 

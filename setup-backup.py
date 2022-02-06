@@ -37,7 +37,7 @@ if PI:
     #Board to Board UART:
     try:
         # Use a timeout of zero so we don't delay while waiting for a message.
-        uart = serial.Serial('/dev/serial0', settings.buad_rate, timeout= settings.uart_timeout)
+        uart = serial.Serial('/dev/serial0', settings.BAUD_RATE, timeout= settings.UART_TIMEOUT)
         print("Success: Opened UART port:",uart.name)  # check which port was really used
         uart.write(b'I,Serial Start\n')  # write a string
     except Exception as e:

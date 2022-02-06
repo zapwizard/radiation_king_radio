@@ -51,11 +51,11 @@ if PI:
                 vendor = mount.get_vendor(device)
                 size = mount.get_size(device)
                 model = mount.get_model(device)
-                if vendor == settings.pico_vendor and model == settings.pico_model and size == settings.pico_size :
+                if vendor == settings.PICO_VENDOR and model == settings.PICO_MODEL and size == settings.PICO_SIZE :
                     device_name = mount.get_device_name(device)
                     print("USB Search: Mounting",device)
-                    mount.mount(device, name=settings.pico_folder_name)  # mount the device
-                    usb_path = mount.get_media_path(settings.pico_folder_name)
+                    mount.mount(device, name=settings.PICO_FOLDER_NAME)  # mount the device
+                    usb_path = mount.get_media_path(settings.PICO_FOLDER_NAME)
                     if os.path.isdir(usb_path):
                         print("USB Search: Found a Pi Pico at: Path:", usb_path, "Vendor:", vendor, "Model:", model,
                               "Size:", size, )
@@ -73,7 +73,7 @@ if PI:
         try: #copy all files in Pi Pico folder over to the Pi
             print("Startup: Copying files to Pi Pico")
             distutils.dir_util._path_created.clear()
-            distutils.dir_util.copy_tree(settings.pico_source, usb_path, preserve_symlinks=1, update=1, verbose=1)
+            distutils.dir_util.copy_tree(settings.PICO_SOURCE, usb_path, preserve_symlinks=1, update=1, verbose=1)
         except Exception as error:
             print("Error copying files to Pi Pico:")
             sys.exit(error)
@@ -84,7 +84,7 @@ if PI:
     try:
         # Use a timeout of zero so we don't delay while waiting for a message.
 
-        uart = serial.Serial(settings.serial_port, settings.buad_rate, timeout=settings.uart_timeout)
+        uart = serial.Serial(settings.SERIAL_PORT, settings.BAUD_RATE, timeout=settings.UART_TIMEOUT)
         print("Startup: Opened UART port:", uart.name)  # check which port was really used
         uart.write(b'I,Serial Start\n')  # write a string
     except Exception as e:
