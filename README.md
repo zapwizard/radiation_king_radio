@@ -21,9 +21,7 @@ This is still at work in progress. [See the project log](https://www.therpf.com/
 - Playback ordered or randomized stations
 - Standby mode
 - Neopixel lights with warm start/shutdown effect
-
-### Coming soon:
--Ultrasonic Remote control
+- Ultrasonic Remote Control
 
 ## Audio Folders:
 ### Audio Files:
@@ -65,7 +63,7 @@ Each time you alter the audio files you should enable caching, reboot, wait for 
 You can operate the radio with caching always enabled, but it will make the boot up take a very long time.
 
 ## Pi Pico files:
-The pi_pico_files folder contains the code for the Pi Pico. You must have already loaded CircuitPython 7.1.1 or later prior to connecting the Pi Pico to the Pi Zero over USB.
+The pi_pico_files folder contains the code for the Pi Pico. You must have already loaded CircuitPython prior to connecting the Pi Pico to the Pi Zero over USB.
 The Pi Zero code will automatically copy the files needed to the Pi Pico. 
 The Pi Pico will send its serial output to the Pi Zero over USB UART. To see USB serial playback otherwise you need to disable the print() command in the code.py files.
 
@@ -120,6 +118,9 @@ If you use a linear pot for both, adding a 680ohm resistor to one the ground leg
 
 ##Neopixels:
 An array of 8 Neopixels are used to light up the gauge display. As you change bands, the a signle will light up briefly to indicate which band number you are on.
+
+##Ultra Sonic Remote:
+Using a SPH0641LU4H-1 Mems Microphone, and PWM audio a 1950's mechanical remote can be setup to operate the radio. The frequencies of each button can be set in the settings.
 
 #Licence:
 Licence: Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)

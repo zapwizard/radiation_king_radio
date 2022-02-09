@@ -51,9 +51,13 @@ ADC_1_SMOOTHING = 0.2  # Float between 0 and 1. Lower means more smoothing
 # Float angle, angle has to change by more than this before the needle moves.
 # Numbers great than 1 make for jumpy needle movement.
 # Is overwritten when digital tuning to prevent ADC noise from changing the result.
-TUNING_DEAD_ZONE = 0.5
+TUNING_DEAD_ZONE = 0.5 # Angle
 DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally tuned.
 
+#Volume settings related to remote control
+VOLUME_DEAD_ZONE = 0.03 # Float 0-1
+DIGITAL_VOLUME_DEAD_ZONE = 0.05
+VOLUME_INCREMENT = 0.12
 
 #Buttons:
 buttons = keypad.Keys((board.GP10,board.GP11,board.GP12,board.GP13,board.GP14),value_when_pressed=False, pull=True, interval=0.05)
@@ -102,3 +106,18 @@ MOTOR_ANGLE_MAX = 168
 MOTOR_MID_POINT = (MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN) / 2 + 15
 MOTOR_RANGE = MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN
 
+# Ultrasonic Remote Related
+REMOTE_ENABLED = True
+REMOTE_THRESHOLD = 60 # Minimum signal level needed to trigger response
+REMOTE_FREQ_MIN = 35000
+REMOTE_SAMPLE_RATE = 1
+REMOTE_SAMPLE_FREQUENCY = 80000
+REMOTE_SAMPLE_SIZE = 1024
+
+# List if valid frequencies detected when pressing a button on the remote
+REMOTE_FREQS = [
+[39531, 39609, 39844],  # Channel Lower
+[37812, 37734, 37891],  # Volume On/Off
+[38750, 38828, 35547],  # Sound Mute
+[38516, 38594, 35938],  # Channel Higher
+]

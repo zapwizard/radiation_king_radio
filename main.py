@@ -472,8 +472,8 @@ def select_station(new_station_num, manual=False):
 
 
 def prev_station():
-    global station_num, total_station_num
-    station_num = station_num - 1
+    global station_num, total_station_num, motor_angle
+    station_num = get_nearest_station(motor_angle) - 1
     if station_num < 0:
         station_num = 0
         print("Tuning: At the beginning of the station list", station_num, "/", total_station_num)
@@ -483,8 +483,8 @@ def prev_station():
 
 
 def next_station():
-    global station_num, total_station_num
-    station_num = station_num + 1
+    global station_num, total_station_num, motor_angle
+    station_num = get_nearest_station(motor_angle) + 1
     if station_num > total_station_num - 1:
         station_num = total_station_num - 1
         print("Tuning: At end of the station list", station_num, "/", total_station_num)

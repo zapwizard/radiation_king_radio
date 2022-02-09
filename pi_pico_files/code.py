@@ -1,3 +1,4 @@
+
 #This code goes onto the Pi Pico
 import time
 import sys
@@ -7,14 +8,19 @@ from adafruit_simplemath import map_range, constrain
 import atexit
 import usb_cdc
 import pico_settings as settings
+if settings.REMOTE_ENABLED:
+    import pdm_audio
 
 ## globals:
 # ADC Related:
 ADC_0_Prev_Value = 0
 ADC_0_smoothed = 0
+adc_0_dead_zone = settings.VOLUME_DEAD_ZONE
+volume = 0
 motor_angle_prev = 0
 ADC_1_smoothed = 0
 adc_1_dead_zone = settings.TUNING_DEAD_ZONE
+
 
 #Switch related:
 volume_switch_state = None
@@ -32,6 +38,7 @@ pi_zero_heartbeat_time = 0
 usb_cdc.console.timeout = settings.UART_TIMEOUT
 usb_cdc.data.timeout = settings.UART_TIMEOUT
 uart_line = None
+remote_sample_time = 0
 
 def receive_uart():
     global uart_line
@@ -55,8 +62,8 @@ def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
         print("UART Error: (%s)" % err, error)
 
  #Comment this method out for local USB print debugging
-def print(*args, **kwargs):
-    send_uart("I",*args,**kwargs)
+#def print(*args, **kwargs):
+    #send_uart("I",*args,**kwargs)
 
 def set_motor(angle, disable = False, from_uart = False):  # Set angle in degrees
     global motor_angle
@@ -185,7 +192,7 @@ def check_adc():
 
 
 def check_volume_knob():
-    global ADC_0_Prev_Value, ADC_0_smoothed
+    global ADC_0_Prev_Value, ADC_0_smoothed, adc_0_dead_zone, volume
     adc_0_value = settings.ADC_0.value
 
     # ADC_0 Self Calibration
@@ -193,11 +200,14 @@ def check_volume_knob():
     if adc_0_value > settings.ADC_0_MAX: settings.ADC_0_MAX = adc_0_value
 
     ADC_0_smoothed = settings.ADC_0_SMOOTHING * adc_0_value + (1 - settings.ADC_0_SMOOTHING) * ADC_0_smoothed
-    volume = round(map_range(ADC_0_smoothed, settings.ADC_0_MIN, settings.ADC_0_MAX, 0, 1), 3)
-    if volume != ADC_0_Prev_Value:
-        ADC_0_Prev_Value = volume
-        send_uart("V", str(ADC_0_Prev_Value))
-                #print("Volume:",str(volume), ADC_0_smoothed, settings.ADC_0.value)
+    volume_setting = round(map_range(ADC_0_smoothed, settings.ADC_0_MIN, settings.ADC_0_MAX, 0, 1), 3)
+
+    if volume_setting > ADC_0_Prev_Value + adc_0_dead_zone or volume_setting < ADC_0_Prev_Value - adc_0_dead_zone:
+        ADC_0_Prev_Value = volume_setting
+        send_uart("V", str(volume_setting))
+        volume = volume_setting
+        adc_0_dead_zone = settings.VOLUME_DEAD_ZONE
+        print("Volume:",volume, ADC_0_smoothed, settings.ADC_0.value)
 
 
 def check_tuning_knob():
@@ -214,7 +224,7 @@ def check_tuning_knob():
                             settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX), 1)
     if angle > motor_angle_prev + adc_1_dead_zone or angle < motor_angle_prev - adc_1_dead_zone:
         motor_angle_prev = angle
-        set_motor(motor_angle_prev)
+        set_motor(angle)
         adc_1_dead_zone = settings.TUNING_DEAD_ZONE # Reset the deadzone upon manual knob movement.
         #print("Debug: Tuning:",angle, adc_1_value, ADC_1_smoothed)
 
@@ -391,6 +401,7 @@ def switches():
             tuning_switch_state = True
 
 
+
 @atexit.register
 def exit_script():
     print("Exiting")
@@ -427,6 +438,38 @@ while True:
         pi_state = False
         standby()
         wait_for_pi()
+
+    # Ultrasonic remote
+
+    if settings.REMOTE_ENABLED:
+        highest_frequency = pdm_audio.determine_frequencies()
+        if now - remote_sample_time > settings.REMOTE_SAMPLE_RATE and highest_frequency:
+            remote_sample_time = now
+            remote_button = pdm_audio.determine_button(highest_frequency)
+            if remote_button == 0:
+                print("Remote: Channel Lower, Prev Station", highest_frequency)
+                send_uart("B", "2", "1")
+            if remote_button == 1:
+                adc_0_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+                volume = max(volume - settings.VOLUME_INCREMENT, 0)
+                if volume == 0 and on_off_state: standby()
+                send_uart("V", str(volume))
+                print("Volume On/Off, Volume down", volume, highest_frequency)
+
+            if remote_button == 2:
+                adc_0_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+                volume = min(volume + settings.VOLUME_INCREMENT, 1)
+                if not on_off_state:
+                    resume_from_standby()
+                send_uart("V", str(volume))
+                print("Volume On/Off, Volume Up", volume, highest_frequency)
+
+            if remote_button == 3:
+                print("Remote: Channel Higher, Next Station", highest_frequency)
+                send_uart("B", "2", "3")
+
+            if remote_button == 4:
+                print("Remote: Unknown frequency", highest_frequency)
 
     switches()
 

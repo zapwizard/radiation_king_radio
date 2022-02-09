@@ -2,45 +2,35 @@
 # Code prototype for ultrasonic PDM microphone
 # Waiting for a Circuitpython patch before development can continue
 
+import sys
 import board
-import array
 import audiobusio
+import array
+import time
 import math
 from ulab import numpy as np
-from ulab.scipy.signal import spectrogram
+import digitalio
+import pico_settings as settings
+#from ulab.scipy.signal import spectrogram
 
-
-#Ultrasonic Mic Related
-threshold = 100
+button_sample_time = 0
 pdm_select = digitalio.DigitalInOut(board.GP2)
 pdm_select.direction = digitalio.Direction.OUTPUT
 pdm_select.value = False #Enable ultrasonic mode
 
-sample_frequency = 21000
-sample_size = 1024
-mic = audiobusio.PDMIn(board.GP3, board.GP4, sample_rate=sample_frequency, bit_depth=8, mono=True)
-print ("sample_size=",sample_size,"sample_frequency=",sample_frequency,"returned mic.sample_rate=",mic.sample_rate)
-time_per_sample = None
-samples = array.array('B', [1] * sample_size)
-check = array.array('B', [1] * sample_size)
+
+mic = audiobusio.PDMIn(board.GP3, board.GP4, sample_rate=settings.REMOTE_SAMPLE_FREQUENCY, bit_depth=8, mono=True)
+print ("SAMPLE_SIZE=",settings.REMOTE_SAMPLE_SIZE,"SAMPLE_FREQUENCY=",settings.REMOTE_SAMPLE_FREQUENCY,"returned mic.sample_rate=",mic.sample_rate)
+samples = array.array('B', [1] * settings.REMOTE_SAMPLE_SIZE)
 
 def benchmark_capture():
-    global sample_frequency, sample_size, time_per_sample
     start_capture_time = time.monotonic_ns()
     mic.record(samples, len(samples))
-    if samples == check:
-        print("Failed to capture samples")
-    else:
-        sample_duration = time.monotonic_ns() - start_capture_time
-        time_per_sample = sample_duration / sample_size
-        if time_per_sample:
-            sample_frequency = round((1 / time_per_sample) * 10**9)
-            print(sample_size, "samples took",sample_duration,"ns or", time_per_sample, "ns per sample", "| Max Sample Frequency =", sample_frequency)
-
-#while True:
-benchmark_capture()
-    #time.sleep(5)
-
+    sample_duration_ns = time.monotonic_ns() - start_capture_time
+    ns_per_sample = sample_duration_ns / settings.REMOTE_SAMPLE_SIZE
+    if ns_per_sample:
+        max_sample_freq = round((1 / ns_per_sample) * 10**9)
+        print(settings.REMOTE_SAMPLE_SIZE, "samples took",sample_duration_ns,"ns or", ns_per_sample, "ns per sample", "| Max Sample Frequency =", max_sample_freq)
 
 # Remove DC bias before computing RMS.
 def mean(values):
@@ -56,61 +46,47 @@ def normalized_rms(values):
 
 def perform_fft(samples):
     real, imaginary = np.fft.fft(np.array(samples)) # Perform FFT
-    results = real[1:len(real)] # Remove DC offset
-    return results
-
-def perform_spectrogram(samples):
-    results = spectrogram(np.array(samples))
-    results = results[1:len(results)] # Remove DC offset
-    return results
-
-def determine_energies(results):
-    global threshold, hz_per_sample
-    lowest_energy = round(abs(np.min(results)))
-    if lowest_energy > threshold:
-        highest_address = np.argmax(results) + 1 # Determine max energetic signal
-        highest_frequency = highest_address * hz_per_sample # Get the frequency of the highest amplitude
-        return highest_frequency
+    return real[1:len(real)] # Remove DC offset
 
 def determine_button(highest):
-    if highest > 250000:
-        print("4: Channel Lower", highest)
-    elif highest > 70:
-        print("3: Channel Lower", highest)
-    elif highest > 30:
-        print("2: Volume On/Off", highest)
-    elif highest > 22000:
-        print("1: Channel Higher", highest)
+    if highest in settings.REMOTE_FREQS[0]:
+        return 0
+    elif highest in settings.REMOTE_FREQS[1]:
+        return 1
+    elif highest in settings.REMOTE_FREQS[2]:
+        return 2
+    elif highest in settings.REMOTE_FREQS[3]:
+        return 3
     else:
-        print("Invalid", highest)
+        return 4
 
-hz_per_sample = sample_frequency / sample_size
-print("hz_per_sample=", hz_per_sample)
-time.sleep(3)
+def determine_frequencies():
+    hz_per_sample = settings.REMOTE_SAMPLE_FREQUENCY / settings.REMOTE_SAMPLE_SIZE
+    mic.record(samples, len(samples))
 
+    #Perform FFT on half the samples
+    fft_results = perform_fft(samples[0:round(len(samples)/2)])
 
-mic.record(samples, len(samples))
+    #Determine if samples are above THRESHOLD
+    lowest_energy = round(abs(np.min(fft_results)))
 
-#Perform FFT on samples
-fft_results = perform_fft(samples)
-#fft_results = perform_spectrogram(samples)
+    # Get the frequency of the highest amplitude
+    highest_address = np.argmax(fft_results)
+    highest_frequency = round(highest_address * hz_per_sample)
 
-#Crop to upper frequencies:
-fft_results = fft_results[round(len(fft_results)/2):len(fft_results)]
+    if (
+        highest_frequency > settings.REMOTE_FREQ_MIN
+        and lowest_energy > settings.REMOTE_THRESHOLD
+    ):
+        return highest_frequency
 
-#Determine if samples are above threshold
-lowest_energy = round(abs(np.min(fft_results)))
+benchmark_capture()
 
-#if lowest_energy > threshold:
-
-magnitude = normalized_rms(fft_results)
-
-# Compute the highest average result:
-highest_address = np.argmax(fft_results)
-highest_frequency = round(highest_address * hz_per_sample) # Get the frequency of the highest amplitude
-
-print(("lowest_energy",lowest_energy,"\t|avg magnitude",magnitude))
-#"\t|highest_frequency",highest_frequency))
-
-time.sleep(5)
+#
+#while True:
+    #now = time.time()
+    #highest_frequency = determine_frequencies()
+    #if now - button_sample_time > settings.REMOTE_SAMPLE_RATE and highest_frequency:
+        #button_sample_time = now
+        #determine_button(highest_frequency)
 
