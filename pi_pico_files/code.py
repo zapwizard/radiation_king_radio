@@ -459,7 +459,7 @@ while True:
             remote_button = pdm_audio.determine_button(highest_frequency)
             if remote_button == 0:
                 print("Remote: Channel Lower, Prev Station", highest_frequency)
-                send_uart("B", "2", "1")
+                send_uart("B", "1", "1")
             if remote_button == 1:
                 volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
                 volume = max(volume - settings.DIGITAL_VOLUME_INCREMENT, 0)
@@ -477,7 +477,7 @@ while True:
 
             if remote_button == 3:
                 print("Remote: Channel Higher, Next Station", highest_frequency)
-                send_uart("B", "2", "3")
+                send_uart("B", "1", "3")
 
             if remote_button == 4:
                 print("Remote: Unknown frequency", highest_frequency)
