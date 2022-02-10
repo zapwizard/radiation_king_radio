@@ -8,18 +8,16 @@ from adafruit_simplemath import map_range, constrain
 import atexit
 import usb_cdc
 import pico_settings as settings
-if settings.REMOTE_ENABLED:
-    import pdm_audio
 
 ## globals:
 # ADC Related:
-ADC_0_Prev_Value = 0
+volume_prev = 0
 ADC_0_smoothed = 0
-adc_0_dead_zone = settings.VOLUME_DEAD_ZONE
+volume_dead_zone = settings.VOLUME_DEAD_ZONE
 volume = 0
 motor_angle_prev = 0
 ADC_1_smoothed = 0
-adc_1_dead_zone = settings.TUNING_DEAD_ZONE
+tuning_dead_zone = settings.TUNING_DEAD_ZONE
 
 
 #Switch related:
@@ -39,6 +37,7 @@ usb_cdc.console.timeout = settings.UART_TIMEOUT
 usb_cdc.data.timeout = settings.UART_TIMEOUT
 uart_line = None
 remote_sample_time = 0
+brightness_smoothed = 0
 
 def receive_uart():
     global uart_line
@@ -61,9 +60,11 @@ def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
         _, err, _ = sys.exc_info()
         print("UART Error: (%s)" % err, error)
 
- #Comment this method out for local USB print debugging
-#def print(*args, **kwargs):
-    #send_uart("I",*args,**kwargs)
+#Comment this method out for local USB print debugging
+#To debug the Pico on the Pi Zero run: minicom -b 9600 -o -D /dev/ttyACM0
+def print(*args, **kwargs):
+    send_uart("I", *args, **kwargs)
+
 
 def set_motor(angle, disable = False, from_uart = False):  # Set angle in degrees
     global motor_angle
@@ -180,19 +181,16 @@ def check_switches():
             return switch_event.key_number, settings.SWITCH_CCW
     return None, None
 
-def check_adc():
-    global volume_switch_state, tuning_switch_state
 
-    # Switch 0 disables ADC_0 (To allow for standby mode)
-    if volume_switch_state:
-        check_volume_knob()
-    # Switch 1 disables ADC_1 (To allow for manual tuning)
-    if tuning_switch_state:
-        check_tuning_knob()
+def brightness_control():
+    global brightness_smoothed
+    settings.GAUGE_PIXEL_MAX_BRIGHTNESS = map_range(get_adc_0(), settings.ADC_0_MIN, settings.ADC_0_MAX, 0, 1)
+    brightness_smoothed = round(settings.BRIGHTNESS_SMOOTHING * settings.GAUGE_PIXEL_MAX_BRIGHTNESS + (1 - settings.BRIGHTNESS_SMOOTHING) * brightness_smoothed, 3)
+    settings.gauge_pixels.brightness = brightness_smoothed
+    #print("Debug",brightness_smoothed)
 
-
-def check_volume_knob():
-    global ADC_0_Prev_Value, ADC_0_smoothed, adc_0_dead_zone, volume
+def get_adc_0():
+    global ADC_0_smoothed
     adc_0_value = settings.ADC_0.value
 
     # ADC_0 Self Calibration
@@ -200,18 +198,10 @@ def check_volume_knob():
     if adc_0_value > settings.ADC_0_MAX: settings.ADC_0_MAX = adc_0_value
 
     ADC_0_smoothed = settings.ADC_0_SMOOTHING * adc_0_value + (1 - settings.ADC_0_SMOOTHING) * ADC_0_smoothed
-    volume_setting = round(map_range(ADC_0_smoothed, settings.ADC_0_MIN, settings.ADC_0_MAX, 0, 1), 3)
+    return ADC_0_smoothed
 
-    if volume_setting > ADC_0_Prev_Value + adc_0_dead_zone or volume_setting < ADC_0_Prev_Value - adc_0_dead_zone:
-        ADC_0_Prev_Value = volume_setting
-        send_uart("V", str(volume_setting))
-        volume = volume_setting
-        adc_0_dead_zone = settings.VOLUME_DEAD_ZONE
-        print("Volume:",volume, ADC_0_smoothed, settings.ADC_0.value)
-
-
-def check_tuning_knob():
-    global motor_angle_prev, ADC_1_smoothed, adc_1_dead_zone
+def get_adc_1():
+    global ADC_1_smoothed
     adc_1_value = settings.ADC_1.value
 
     #ADC_1 Self Calibration
@@ -219,13 +209,30 @@ def check_tuning_knob():
     if adc_1_value > settings.ADC_1_MAX: settings.ADC_1_MAX = adc_1_value
 
     ADC_1_smoothed = settings.ADC_1_SMOOTHING * adc_1_value + (1 - settings.ADC_1_SMOOTHING) * ADC_1_smoothed
-    angle = round(map_range(ADC_1_smoothed,
+    return ADC_1_smoothed
+
+def check_volume_knob():
+    global volume_prev, volume_dead_zone, volume
+
+    volume_setting = round(map_range(get_adc_0(), settings.ADC_0_MIN, settings.ADC_0_MAX, 0, 1), 3)
+
+    if volume_setting > volume_prev + volume_dead_zone or volume_setting < volume_prev - volume_dead_zone:
+        volume_prev = volume_setting
+        send_uart("V", str(volume_setting))
+        volume = volume_setting
+        volume_dead_zone = settings.VOLUME_DEAD_ZONE
+        #print("Volume:",volume, ADC_0_smoothed, settings.ADC_0.value)
+
+
+def check_tuning_knob():
+    global motor_angle_prev, tuning_dead_zone
+    angle = round(map_range(get_adc_1(),
                             settings.ADC_1_MIN, settings.ADC_1_MAX,
                             settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX), 1)
-    if angle > motor_angle_prev + adc_1_dead_zone or angle < motor_angle_prev - adc_1_dead_zone:
+    if angle > motor_angle_prev + tuning_dead_zone or angle < motor_angle_prev - tuning_dead_zone:
         motor_angle_prev = angle
         set_motor(angle)
-        adc_1_dead_zone = settings.TUNING_DEAD_ZONE # Reset the deadzone upon manual knob movement.
+        tuning_dead_zone = settings.TUNING_DEAD_ZONE # Reset the deadzone upon manual knob movement.
         #print("Debug: Tuning:",angle, adc_1_value, ADC_1_smoothed)
 
 
@@ -407,6 +414,10 @@ def exit_script():
     print("Exiting")
     #settings.serial.Close()
 
+if settings.REMOTE_ENABLED:
+    import pdm_audio
+
+
 print("Startup: Pi Pico Started")
 # Wait for Pi Zero due to its slower boot up time
 settings.gauge_pixels.fill((16, 0, 0, 0))
@@ -450,15 +461,15 @@ while True:
                 print("Remote: Channel Lower, Prev Station", highest_frequency)
                 send_uart("B", "2", "1")
             if remote_button == 1:
-                adc_0_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
-                volume = max(volume - settings.VOLUME_INCREMENT, 0)
+                volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+                volume = max(volume - settings.DIGITAL_VOLUME_INCREMENT, 0)
                 if volume == 0 and on_off_state: standby()
                 send_uart("V", str(volume))
                 print("Volume On/Off, Volume down", volume, highest_frequency)
 
             if remote_button == 2:
-                adc_0_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
-                volume = min(volume + settings.VOLUME_INCREMENT, 1)
+                volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+                volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
                 if not on_off_state:
                     resume_from_standby()
                 send_uart("V", str(volume))
@@ -474,7 +485,14 @@ while True:
     switches()
 
     if on_off_state:
-        check_adc()
+        # Switch 0 disables ADC_0 (To allow for standby mode)
+        if volume_switch_state:
+            # Switch 1 disables volume control, to allow for brightness control.
+            if tuning_switch_state:
+                check_volume_knob()
+            else:
+                brightness_control()
+            check_tuning_knob()
         buttons()
 
     uart_message = receive_uart()
@@ -499,7 +517,7 @@ while True:
                 #print("Message:",uart_message)
                 if len(uart_message) > 1 and uart_message[1]:
                     print("From Zero: New motor angle",uart_message[1])
-                    adc_1_dead_zone = settings.DIGITAL_TUNING_DEAD_ZONE
+                    tuning_dead_zone = settings.DIGITAL_TUNING_DEAD_ZONE
                     set_motor(eval(uart_message[1]),from_uart = True)
 
             #Other Commands

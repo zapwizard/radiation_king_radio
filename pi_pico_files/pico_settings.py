@@ -29,6 +29,7 @@ GAUGE_PIXEL_COLOR = (160, 32, 0, 38) # Use to alter the default color
 GAUGE_PIXEL_MAX_BRIGHTNESS = 0.3 # Sets the entire strip max brightness
 gauge_pixels = neopixel.NeoPixel(board.GP15, GAUGE_PIXEL_QTY, brightness=GAUGE_PIXEL_MAX_BRIGHTNESS, auto_write=True, pixel_order=gauge_neopixel_order)
 gauge_pixels.fill((0, 0, 0, 0))
+BRIGHTNESS_SMOOTHING = 0.1
 
 aux_neopixel_order = neopixel.GRBW
 AUX_PIXEL_QTY = 5
@@ -55,9 +56,9 @@ TUNING_DEAD_ZONE = 0.5 # Angle
 DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally tuned.
 
 #Volume settings related to remote control
-VOLUME_DEAD_ZONE = 0.03 # Float 0-1
-DIGITAL_VOLUME_DEAD_ZONE = 0.05
-VOLUME_INCREMENT = 0.12
+VOLUME_DEAD_ZONE = 0.04 # Float 0-1
+DIGITAL_VOLUME_DEAD_ZONE = 0.06
+DIGITAL_VOLUME_INCREMENT = 0.13
 
 #Buttons:
 buttons = keypad.Keys((board.GP10,board.GP11,board.GP12,board.GP13,board.GP14),value_when_pressed=False, pull=True, interval=0.05)
@@ -73,7 +74,6 @@ button_state = [None] * BUTTON_QUANTITY
 button_number = None
 button_held_state= [False] * BUTTON_QUANTITY
 button_event_type = None
-
 
 #Switches:
 switches = keypad.Keys((board.GP8,board.GP9),value_when_pressed=False, pull=True, interval=0.1)
@@ -116,8 +116,8 @@ REMOTE_SAMPLE_SIZE = 1024
 
 # List if valid frequencies detected when pressing a button on the remote
 REMOTE_FREQS = [
-[39531, 39609, 39844],  # Channel Lower
+[39531, 39609, 39844, 39453, 39688],  # Channel Lower
 [37812, 37734, 37891],  # Volume On/Off
 [38750, 38828, 35547],  # Sound Mute
-[38516, 38594, 35938],  # Channel Higher
+[38516, 38594, 35938, 37031, 37953],  # Channel Higher
 ]

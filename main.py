@@ -477,6 +477,7 @@ def prev_station():
     if station_num < 0:
         station_num = 0
         print("Tuning: At the beginning of the station list", station_num, "/", total_station_num)
+        prev_band()
     else:
         print("Tuning: Previous station", station_num, "/", total_station_num)
     select_station(station_num, True)
@@ -488,6 +489,7 @@ def next_station():
     if station_num > total_station_num - 1:
         station_num = total_station_num - 1
         print("Tuning: At end of the station list", station_num, "/", total_station_num)
+        next_band()
     else:
         print("Tuning: Next station", station_num, "/", total_station_num)
     select_station(station_num, True)
@@ -627,7 +629,7 @@ def run():
                 #print("From UART:", uart_message)
                 # Information output
                 if uart_message[0] == "I" and on_off_state:
-                    print("Pico serial:",uart_message[1])
+                    print("Pico serial:", uart_message, end="\n")
 
                 if uart_message[0] == "H" and uart_message[1] == "Pico":
                     pico_heartbeat_time = now
@@ -680,21 +682,21 @@ def run():
 def process_button_press(uart_message):
     print("UART: Held button", uart_message[2])
     if uart_message[2] == "0" and active_station: active_station.rewind()
-    if uart_message[2] == "1": prev_band()
+    if uart_message[2] == "1": prev_station()
     if uart_message[2] == "2" and active_station:
         active_station.play_pause()
-    if uart_message[2] == "3": next_band()
+    if uart_message[2] == "3": next_station()
     if uart_message[2] == "4" and active_station: active_station.fast_forward()
 
 
 def process_button_hold(uart_message):
     print("UART: Released button", uart_message[2])
     if uart_message[2] == "0" and active_station: active_station.prev_song()
-    if uart_message[2] == "1": prev_station()
+    if uart_message[2] == "1": prev_band()
     if uart_message[2] == "2" and active_station:
         active_station.randomize_station()
         active_station.next_song()
-    if uart_message[2] == "3": next_station()
+    if uart_message[2] == "3": next_band()
     if uart_message[2] == "4" and active_station: active_station.next_song()
 
 

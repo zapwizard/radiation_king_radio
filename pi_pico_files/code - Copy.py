@@ -61,7 +61,7 @@ import usb_cdc
 
 ## globals:
 # ADC Related:
-ADC_0_Prev_Value = 0
+volume_prev = 0
 ADC_0_smoothed = 0
 motor_angle_prev = 0
 ADC_1_smoothed = 0
@@ -222,7 +222,7 @@ def check_switches():
     return None, None
 
 def check_adc():
-    global ADC_0_Prev_Value, motor_angle_prev
+    global volume_prev, motor_angle_prev
     global volume_switch_state, tuning_switch_state, ADC_1_smoothed, ADC_0_smoothed
 
     # Switch 0 disables ADC_0 (To allow for standby mode)
