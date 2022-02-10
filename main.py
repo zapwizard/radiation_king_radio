@@ -729,7 +729,7 @@ class Radiostation:
 
 
     def live_playback(self):
-        global volume
+        global volume, tuning_volume
         #self.start_pos = 0
         if self.files:
             self.start_pos = max(time.time() - self.start_time, 0)
@@ -811,7 +811,7 @@ class Radiostation:
 
 
     def next_song(self):
-        global volume
+        global tuning_volume
         self.files.rotate(-1)
         self.song_lengths.rotate(-1)
         self.start_time = time.time()

@@ -116,8 +116,8 @@ REMOTE_SAMPLE_SIZE = 1024
 
 # List if valid frequencies detected when pressing a button on the remote
 REMOTE_FREQS = [
-[39531, 39609, 39844, 39453, 39688],  # Channel Lower
+[39531, 39609, 39844],  # Channel Lower
 [37812, 37734, 37891],  # Volume On/Off
 [38750, 38828, 35547],  # Sound Mute
-[38516, 38594, 35938, 37031, 37953],  # Channel Higher
+[38516, 38594, 35938],  # Channel Higher
 ]

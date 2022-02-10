@@ -218,8 +218,8 @@ def check_volume_knob():
 
     if volume_setting > volume_prev + volume_dead_zone or volume_setting < volume_prev - volume_dead_zone:
         volume_prev = volume_setting
-        send_uart("V", str(volume_setting))
         volume = volume_setting
+        send_uart("V", str(volume))
         volume_dead_zone = settings.VOLUME_DEAD_ZONE
         #print("Volume:",volume, ADC_0_smoothed, settings.ADC_0.value)
 
@@ -463,7 +463,8 @@ while True:
             if remote_button == 1:
                 volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
                 volume = max(volume - settings.DIGITAL_VOLUME_INCREMENT, 0)
-                if volume == 0 and on_off_state: standby()
+                if volume == 0 and on_off_state:
+                    standby()
                 send_uart("V", str(volume))
                 print("Volume On/Off, Volume down", volume, highest_frequency)
 
