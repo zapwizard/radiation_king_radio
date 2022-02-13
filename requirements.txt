@@ -9,6 +9,8 @@ PyGObject
 pyserial
 pyudev
 
+#Neeeded for soft off via GPIO17:
+#curl https://get.pimoroni.com/onoffshim | bash
 
 # Bluetooth (I never got this working with volume control, perhaps you can)
 # https://thecodeninja.net/2016/06/bluetooth-audio-receiver-a2dp-sink-with-raspberry-pi/

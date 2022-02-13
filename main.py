@@ -566,13 +566,24 @@ def wait_for_pico():
             print("UART:", uart_message)
             try:
                 if uart_message[0] == "H":
-                    if len(uart_message) > 1 and uart_message[1]:
-                        if uart_message[1] == "Pico":
-                            pico_state = True
-                            print("UART: Pi Pico heartbeat received")
+                    if len(uart_message) > 1 and uart_message[1] and uart_message[1] == "Pico":
+                        pico_state = True
+                        print("UART: Pi Pico heartbeat received")
+                if uart_message[0] == "P":
+                    if uart_message[1] == "2":
+                        print("UART Info: Pi Pico called code exit")
+                        sys.exit()
+                    if uart_message[1] == "3":
+                        print("UART Info: Pi Pico called Pi Zero Shutdown")
+                        shutdown_zero()
+
             except Exception as error:
                 print("UART Error:", error)
 
+def shutdown_zero():
+    print("Info: Doing a full shutdown")
+    from subprocess import call
+    call("sudo nohup shutdown -h now", shell=True)
 
 def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
     if setup.uart:
@@ -665,6 +676,13 @@ def run():
                     if uart_message[1] == "0":
                         print("UART Info: Pi Pico called Standby")
                         standby()
+                    if uart_message[1] == "2":
+                        print("UART Info: Pi Pico called code exit")
+                        sys.exit()
+                    if uart_message[1] == "3":
+                        print("UART Info: Pi Pico called Pi Zero Shutdown")
+                        shutdown_zero()
+
         except Exception as error:
                print("UART Error:", str(error))
         if setup.gpio_available:

@@ -1,5 +1,6 @@
 
 #This code goes onto the Pi Pico
+import pico_settings as settings
 import time
 import sys
 import math
@@ -7,7 +8,7 @@ import supervisor
 from adafruit_simplemath import map_range, constrain
 import atexit
 import usb_cdc
-import pico_settings as settings
+
 
 ## globals:
 # ADC Related:
@@ -18,7 +19,6 @@ volume = 0
 motor_angle_prev = 0
 ADC_1_smoothed = 0
 tuning_dead_zone = settings.TUNING_DEAD_ZONE
-
 
 #Switch related:
 volume_switch_state = None
@@ -38,6 +38,7 @@ usb_cdc.data.timeout = settings.UART_TIMEOUT
 uart_line = None
 remote_sample_time = 0
 brightness_smoothed = 0
+
 
 def receive_uart():
     global uart_line
@@ -62,8 +63,9 @@ def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
 
 #Comment this method out for local USB print debugging
 #To debug the Pico on the Pi Zero run: minicom -b 9600 -o -D /dev/ttyACM0
-def print(*args, **kwargs):
-    send_uart("I", *args, **kwargs)
+if not usb_cdc.console:
+    def print(*args, **kwargs):
+       send_uart("I", *args, **kwargs)
 
 
 def set_motor(angle, disable = False, from_uart = False):  # Set angle in degrees
@@ -128,6 +130,7 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
         settings.COS_POS.value = False
         settings.COS_NEG.value = False
 
+
 def test_motor():
     set_motor(0)
     time.sleep(1)
@@ -146,7 +149,7 @@ def blink_led():
     settings.led.value = not settings.led.value
 
 
-def check_buttons():
+def get_button_states():
     button_event = settings.buttons.events.get()
     time_ticks = supervisor.ticks_ms()
     for button_num, press_time in enumerate(settings.BUTTON_PRESS_TIME):
@@ -171,6 +174,7 @@ def check_buttons():
                 #print("Debug: Button",button_event.key_number,"Released at",button_event.timestamp)
                 return button_event.key_number, settings.BUTTON_RELEASED
     return None, None
+
 
 def check_switches():
     switch_event = settings.switches.events.get()
@@ -200,6 +204,7 @@ def get_adc_0():
     ADC_0_smoothed = settings.ADC_0_SMOOTHING * adc_0_value + (1 - settings.ADC_0_SMOOTHING) * ADC_0_smoothed
     return ADC_0_smoothed
 
+
 def get_adc_1():
     global ADC_1_smoothed
     adc_1_value = settings.ADC_1.value
@@ -210,6 +215,7 @@ def get_adc_1():
 
     ADC_1_smoothed = settings.ADC_1_SMOOTHING * adc_1_value + (1 - settings.ADC_1_SMOOTHING) * ADC_1_smoothed
     return ADC_1_smoothed
+
 
 def check_volume_knob():
     global volume_prev, volume_dead_zone, volume
@@ -245,6 +251,7 @@ def resume_from_standby():
         on_off_state = True
         send_uart("P", "1")
 
+
 def standby():
     global on_off_state
     if on_off_state:
@@ -252,6 +259,7 @@ def standby():
         on_off_state = False
         send_uart("P", "0")
         soft_stop()
+
 
 def sweep(restore_angle):
     set_pixels(off=True)
@@ -265,6 +273,7 @@ def sweep(restore_angle):
         time.sleep(0.2)
         print("Sweep: restore_angle=", restore_angle)
         set_motor(restore_angle)
+
 
 def soft_stop():
     global motor_angle
@@ -319,9 +328,15 @@ def set_pixels(brightness=None, pixel=None, off=False, channel=None):
         settings.aux_pixels.fill(settings.AUX_PIXEL_COLOR)
 
 def wait_for_pi():
-    global pi_state, pi_zero_heartbeat_time, uart_heartbeat_time
+    global pi_state, pi_zero_heartbeat_time, uart_heartbeat_time, on_off_state
     print("Info: Waiting for pi zero heartbeat")
+    on_off_state = False
+    # Wait for Pi Zero due to its slower boot up time
     while not pi_state:
+        if supervisor.runtime.usb_connected:
+            settings.gauge_pixels.fill((16, 16, 0, 0))
+        else:
+            settings.gauge_pixels.fill((16, 0, 0, 0))
         blink_led()
         usb_cdc.data.flush()
         uart_message = receive_uart()
@@ -339,54 +354,115 @@ def wait_for_pi():
                     print("From Zero: Pi Zero Heartbeat received")
             except Exception as error:
                 print("Error: Uart,", error)
+        handle_buttons()
         time.sleep(0.1)
 
+def wait_for_on_switch():
+    settings.gauge_pixels.fill((0, 16, 0, 0))
+    print("Startup: Waiting for on switch")
+    while not volume_switch_state:
+        handle_switches()
+        handle_buttons()
+        time.sleep(0.2)
+        blink_led()
 
-def buttons():
-    button_number, button_event_type = check_buttons()
+def handle_buttons():
+    global on_off_state, pi_state
+    button_number, button_event_type = get_button_states()
     if button_event_type == settings.BUTTON_RELEASED:
-        if button_number == 0:
-            print("Event: Released 0, Rewind")
-            send_uart("B", "1", "0")
+        if on_off_state:
+            if button_number == 0:
+                print("Event: Released 0, Rewind")
+                send_uart("B", "1", "0")
 
-        elif button_number == 1:
-            print("Event: Released 1, Previous band")
-            send_uart("B", "1", "1")
+            elif button_number == 1:
+                print("Event: Released 1, Previous band")
+                send_uart("B", "1", "1")
 
-        elif button_number == 2:
-            print("Event: Released 2, Play/Pause")
-            send_uart("B", "1", "2")
+            elif button_number == 2:
+                print("Event: Released 2, Play/Pause")
+                send_uart("B", "1", "2")
 
-        elif button_number == 3:
-            print("Event: Released 3, Next Band")
-            send_uart("B", "1", "3")
-        elif button_number == 4:
-            print("Event: Released 4, Fast Forward")
-            send_uart("B", "1", "4")
+            elif button_number == 3:
+                print("Event: Released 3, Next Band")
+                send_uart("B", "1", "3")
+            elif button_number == 4:
+                print("Event: Released 4, Fast Forward")
+                send_uart("B", "1", "4")
 
     if button_event_type == settings.BUTTON_HELD:
-        if button_number == 0:
-            print("Event: Held 0, Previous song")
-            send_uart("B", "2", "0")
+        if on_off_state:
+            if button_number == 0:
+                print("Event: Held 0, Previous song")
+                send_uart("B", "2", "0")
+                if button_number == 5:
+                    print("Button 0 held while off: Resetting the Pi Zero")
+                    settings.pi_zero_reset.value = False
+                    time.sleep(0.05)
+                    settings.pi_zero_reset.value = True
 
-        elif button_number == 1:
-            print("Event: Held 1, Prev Station")
-            send_uart("B", "2", "1")
+            elif button_number == 1:
+                print("Event: Held 1, Prev Station")
+                send_uart("B", "2", "1")
 
-        elif button_number == 2:
-            print("Event: Held 2, Randomize Station")
-            send_uart("B", "2", "2")
+            elif button_number == 2:
+                print("Event: Held 2, Randomize Station")
+                send_uart("B", "2", "2")
 
-        elif button_number == 3:
-            print("Event: Held 3, Next Station")
-            send_uart("B", "2", "3")
+            elif button_number == 3:
+                print("Event: Held 3, Next Station")
+                send_uart("B", "2", "3")
 
-        elif button_number == 4:
-            print("Event: Held 4, Next Song")
-            send_uart("B", "2", "4")
+            elif button_number == 4:
+                print("Event: Held 4, Next Song")
+                send_uart("B", "2", "4")
+        else:
+            if button_number == 0:
+                if pi_state:
+                    print("Button 0 held while off: Telling Pi Zero to exit code via serial")
+                    settings.gauge_pixels.fill((0, 255, 0, 0))
+                    time.sleep(2)
+                    settings.gauge_pixels.fill((0, 55, 0, 0))
+                    send_uart("P", "2")
+                elif supervisor.runtime.usb_connected:
+                    print("Button 0 held while off: Telling Pi Zero to exit code via soft off")
+                    settings.gauge_pixels.fill((0, 0, 255, 0))
+                    time.sleep(2)
+                    settings.gauge_pixels.fill((0, 0, 55, 0))
+                    settings.pi_zero_soft_off.value = False
+                    time.sleep(0.1)
+                    settings.pi_zero_soft_off.value = True
+                else:
+                    print("Button 0 held while off and no USB connection")
+                    settings.gauge_pixels.fill((255, 0, 0, 0))
+                    time.sleep(2)
+                    settings.gauge_pixels.fill((55, 0, 0, 0))
+            elif button_number == 2:
+                if pi_state:
+                    print("Button 2 held while off: Telling Pi Zero to shutdown via serial")
+                    settings.gauge_pixels.fill((0, 255, 0, 0))
+                    time.sleep(2)
+                    settings.gauge_pixels.fill((0, 55, 0, 0))
+                    send_uart("P", "3")
+                elif supervisor.runtime.usb_connected:
+                    print("Button 2 held while off: Telling Pi Zero to shutdown via soft off")
+                    settings.gauge_pixels.fill((0, 0, 255, 0))
+                    time.sleep(2)
+                    settings.gauge_pixels.fill((0, 0, 55, 0))
+                    settings.pi_zero_soft_off.value = False
+                    time.sleep(5)
+                    settings.pi_zero_soft_off.value = True
+                else:
+                    print("Button 2 held while off: Resetting the Pi Zero via reset")
+                    settings.gauge_pixels.fill((255, 0, 0, 0))
+                    time.sleep(2)
+                    settings.gauge_pixels.fill((55, 0, 0, 0))
+                    settings.pi_zero_reset.value = False
+                    time.sleep(3)
+                    settings.pi_zero_reset.value = True
 
 
-def switches():
+def handle_switches():
     global volume_switch_state, tuning_switch_state
     switch_number, switch_event_type = check_switches()
     if switch_event_type is settings.SWITCH_CCW:
@@ -419,17 +495,8 @@ if settings.REMOTE_ENABLED:
 
 
 print("Startup: Pi Pico Started")
-# Wait for Pi Zero due to its slower boot up time
-settings.gauge_pixels.fill((16, 0, 0, 0))
 wait_for_pi() # Wait for the Pi Zero to be up and running
-settings.gauge_pixels.fill((0, 16, 0, 0))
-print("Startup: Waiting for on switch")
-while not volume_switch_state:
-    switches()
-    time.sleep(0.2)
-    blink_led()
-
-switches() # Ran twice to catch tuning knob startup setting
+wait_for_on_switch()
 resume_from_standby()
 
 while True:
@@ -452,7 +519,7 @@ while True:
 
     # Ultrasonic remote
 
-    if settings.REMOTE_ENABLED:
+    if settings.REMOTE_ENABLED and tuning_switch_state:
         highest_frequency = pdm_audio.determine_frequencies()
         if now - remote_sample_time > settings.REMOTE_SAMPLE_RATE and highest_frequency:
             remote_sample_time = now
@@ -483,7 +550,8 @@ while True:
             if remote_button == 4:
                 print("Remote: Unknown frequency", highest_frequency)
 
-    switches()
+    handle_switches()
+    handle_buttons()
 
     if on_off_state:
         # Switch 0 disables ADC_0 (To allow for standby mode)
@@ -494,7 +562,7 @@ while True:
             else:
                 brightness_control()
             check_tuning_knob()
-        buttons()
+
 
     uart_message = receive_uart()
     if uart_message:

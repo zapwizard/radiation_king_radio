@@ -10,12 +10,21 @@ import analogio
 # Uart Related
 UART_HEARTBEAT_INTERVAL = 3
 PI_ZERO_HEARTBEAT_TIMEOUT = 15 # must be greater than the heartbeat interval on pi zero
-UART_TIMEOUT = 0.01
+UART_TIMEOUT = 0.05
 
 #LED related:
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
 LED_HEARTBEAT_INTERVAL = 1
+
+#Pi Zero Reset switch
+pi_zero_reset = digitalio.DigitalInOut(board.GP22)
+pi_zero_reset.direction =  digitalio.Direction.OUTPUT
+pi_zero_reset.value = True
+pi_zero_soft_off = digitalio.DigitalInOut(board.GP7)
+pi_zero_soft_off.direction =  digitalio.Direction.OUTPUT
+pi_zero_soft_off.value = True
+
 
 #Neopixel related
 #Template: pixels[0] = (RED, GREEN, BLUE, WHITE) # 0-255
@@ -33,7 +42,7 @@ BRIGHTNESS_SMOOTHING = 0.1
 
 aux_neopixel_order = neopixel.GRBW
 AUX_PIXEL_QTY = 5
-AUX_PIXEL_COLOR = (160, 16, 0, 0) # Use to alter the default color
+AUX_PIXEL_COLOR = (255, 20, 0, 0) # Use to alter the default color
 AUX_PIXEL_MAX_BRIGHTNESS = 1 # Sets the entire strip max brightness
 aux_pixels = neopixel.NeoPixel(board.GP6, AUX_PIXEL_QTY, brightness=AUX_PIXEL_MAX_BRIGHTNESS, auto_write=True, pixel_order=aux_neopixel_order)
 aux_pixels.fill((0, 0, 0, 0))
@@ -107,7 +116,7 @@ MOTOR_MID_POINT = (MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN) / 2 + 15
 MOTOR_RANGE = MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN
 
 # Ultrasonic Remote Related
-REMOTE_ENABLED = True
+REMOTE_ENABLED = False
 REMOTE_THRESHOLD = 60 # Minimum signal level needed to trigger response
 REMOTE_FREQ_MIN = 35000
 REMOTE_SAMPLE_RATE = 1

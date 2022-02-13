@@ -18,7 +18,7 @@ ACTIONS = {
 
 # GPIO.setmode(GPIO.BCM)  # Using GPIO numbering
 GPIO_ACTIONS = {
-    17: "power_off",  # GPIO 17 (Shared with on/off shim)
+    17: "power_off",  # GPIO 17
 }
 
 # To speed up the boot process: Song and station data caching is used
@@ -45,7 +45,7 @@ BAND_CHANGE_VOLUME = 1 # How loud the band changing sound effect is played (Divi
 EFFECTS_VOLUME = 0.8 # How loud the on/off and other sound effects are played
 
 # Air Core Motor Related:
-MOTOR_MIN_ANGLE = 14 # This must match the settings on the Pico
+MOTOR_MIN_ANGLE = 14 # This must match the numbers iun pico_settings.py
 MOTOR_MAX_ANGLE = 168
 MOTOR_RANGE = MOTOR_MAX_ANGLE - MOTOR_MIN_ANGLE
 
@@ -56,7 +56,7 @@ SOUND_BAND_CHANGE = "sounds/Band_Change.ogg"
 
 #Uart Related:
 BAUD_RATE = 115200
-UART_TIMEOUT = 0.01
+UART_TIMEOUT = 0.05
 UART_HEARTBEAT_INTERVAL = 3
 PICO_HEARTBEAT_TIMEOUT = 15 #Must be larger than the sending interval on Pi Pico
 SERIAL_PORT = "/dev/ttyACM1" # use for USB serial data exchange
