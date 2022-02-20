@@ -23,6 +23,11 @@ This is still at work in progress. [See the project log](https://www.therpf.com/
 - Neopixel lights with warm start/shutdown effect
 - Ultrasonic Remote Control
 
+
+#Licence:
+Licence: Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
+
+
 ## Audio Folders:
 ### Audio Files:
 The program will only look for .OGG audio files. The OGG format was selected to make the metadata processing optimized, as well as take up less CPU.
@@ -117,10 +122,8 @@ I opted to use Potentiometers instead of rotary encoders for a similar reason to
 If you use a linear pot for both, adding a 680ohm resistor to one the ground legs of a 10k linear pot can somewhat emulate a log pot. Use a switched pot for the tuning control also if you want to disable the knob for manual/digital turning.
 
 ##Neopixels:
-An array of 8 Neopixels are used to light up the gauge display. As you change bands, the a signle will light up briefly to indicate which band number you are on.
+An array of 8 Neopixels are used to light up the gauge display. As you change bands, one LED will light up briefly to indicate which band number you are on.
 
 ##Ultra Sonic Remote:
-Using a SPH0641LU4H-1 Mems Microphone, and PWM audio a 1950's mechanical remote can be setup to operate the radio. The frequencies of each button can be set in the settings.
-
-#Licence:
-Licence: Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
+Using a SPH0641LU4H-1 Mems Microphone, and PWM audio a 1950's mechanical remote can be setup to operate the radio. A high pass filter is applied to the audio prevent the music from interfering with the remote control.
+A spectrogram of the ultrasonic samples is returned. The index of the highest peak determines which button has been pressed.

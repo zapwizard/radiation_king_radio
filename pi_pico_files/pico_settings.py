@@ -6,6 +6,8 @@ import neopixel
 import pwmio
 import analogio
 #import busio
+from ulab import numpy as np
+
 
 # Uart Related
 UART_HEARTBEAT_INTERVAL = 3
@@ -56,17 +58,17 @@ ADC_1_MAX = 2048 # Deliberately low to allow for self-calibration
 ADC_0 = analogio.AnalogIn(board.A0) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
 ADC_1 = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer for the tuning control.
 ADC_0_SMOOTHING = 0.8  # Float between 0 and 1. Lower means more smoothing
-ADC_1_SMOOTHING = 0.2  # Float between 0 and 1. Lower means more smoothing
+ADC_1_SMOOTHING = 0.6  # Float between 0 and 1. Lower means more smoothing
 
 # Float angle, angle has to change by more than this before the needle moves.
 # Numbers great than 1 make for jumpy needle movement.
 # Is overwritten when digital tuning to prevent ADC noise from changing the result.
-TUNING_DEAD_ZONE = 0.5 # Angle
+TUNING_DEAD_ZONE = 0.3 # Angle
 DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally tuned.
 
 #Volume settings related to remote control
 VOLUME_DEAD_ZONE = 0.04 # Float 0-1
-DIGITAL_VOLUME_DEAD_ZONE = 0.06
+DIGITAL_VOLUME_DEAD_ZONE = 0.1
 DIGITAL_VOLUME_INCREMENT = 0.13
 
 #Buttons:
@@ -116,17 +118,64 @@ MOTOR_MID_POINT = (MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN) / 2 + 15
 MOTOR_RANGE = MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN
 
 # Ultrasonic Remote Related
-REMOTE_ENABLED = False
-REMOTE_THRESHOLD = 60 # Minimum signal level needed to trigger response
-REMOTE_FREQ_MIN = 35000
-REMOTE_SAMPLE_RATE = 1
-REMOTE_SAMPLE_FREQUENCY = 80000
-REMOTE_SAMPLE_SIZE = 1024
+REMOTE_ENABLED = True
+REMOTE_THRESHOLD = 100 # Minimum signal level needed to trigger a response
+REMOTE_FREQ_MIN = 30000
+REMOTE_FREQ_MAX = 40000
+REMOTE_SAMPLE_FREQUENCY = 82000
+REMOTE_SAMPLE_SIZE = 128  # the larger this number, the greater address separation, but slower processing time
+REMOTE_SAMPLE_RATE = 0.7 # Float, Seconds
+REMOTE_HALF_SAMPLE_SIZE = round(REMOTE_SAMPLE_SIZE/2)
+REMOTE_TOLERANCE = 2 # How close to the address do we need to get
 
-# List if valid frequencies detected when pressing a button on the remote
-REMOTE_FREQS = [
-[39531, 39609, 39844],  # Channel Lower
-[37812, 37734, 37891],  # Volume On/Off
-[38750, 38828, 35547],  # Sound Mute
-[38516, 38594, 35938],  # Channel Higher
+
+# Spectrogram address detected when pressing buttons on the remote
+REMOTE_VALID = [
+7,  # Channel Lower
+1,  # Volume On/Off
+16,  # Sound Mute
+10 # Channel Higher
 ]
+
+# Filter coefficients https://fiiir.com/
+FILTER = np.array([
+    -0.000755852829537227,
+    -0.000626265699962122,
+    0.001947063654484086,
+    -0.001672488617108625,
+    -0.001296733451540858,
+    0.005089842128538353,
+    -0.004761956498194768,
+    -0.002622137682319920,
+    0.011912131495380505,
+    -0.011579122617223657,
+    -0.004291523429909216,
+    0.024499575419207345,
+    -0.025420068574640128,
+    -0.005902080843372104,
+    0.049740041414034632,
+    -0.058501749624775487,
+    -0.007060138842068330,
+    0.137716772846327690,
+    -0.269781310646196149,
+    0.326732004797751885,
+    -0.269781310646196149,
+    0.137716772846327690,
+    -0.007060138842068332,
+    -0.058501749624775501,
+    0.049740041414034632,
+    -0.005902080843372104,
+    -0.025420068574640124,
+    0.024499575419207352,
+    -0.004291523429909217,
+    -0.011579122617223657,
+    0.011912131495380512,
+    -0.002622137682319922,
+    -0.004761956498194771,
+    0.005089842128538351,
+    -0.001296733451540857,
+    -0.001672488617108627,
+    0.001947063654484086,
+    -0.000626265699962122,
+    -0.000755852829537227,
+])

@@ -133,7 +133,7 @@ if PI:
     uart = None
     while not uart:
         uart = None
-        print("Startup: Trying to open serial port:", settings.SERIAL_PORT)
+        print("Startup: Trying to open serial port:", settings.SERIAL_PORT, "(This can take several seconds)")
         try:
             uart = serial.Serial(settings.SERIAL_PORT, settings.BAUD_RATE, timeout=settings.UART_TIMEOUT)
         except:

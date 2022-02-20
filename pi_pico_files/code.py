@@ -36,7 +36,6 @@ pi_zero_heartbeat_time = 0
 usb_cdc.console.timeout = settings.UART_TIMEOUT
 usb_cdc.data.timeout = settings.UART_TIMEOUT
 uart_line = None
-remote_sample_time = 0
 brightness_smoothed = 0
 
 
@@ -220,7 +219,9 @@ def get_adc_1():
 def check_volume_knob():
     global volume_prev, volume_dead_zone, volume
 
-    volume_setting = round(map_range(get_adc_0(), settings.ADC_0_MIN, settings.ADC_0_MAX, 0, 1), 3)
+    volume_setting = round(map_range(get_adc_0(),
+                                     settings.ADC_0_MIN, settings.ADC_0_MAX,
+                                     0, 1), 3)
 
     if volume_setting > volume_prev + volume_dead_zone or volume_setting < volume_prev - volume_dead_zone:
         volume_prev = volume_setting
@@ -376,7 +377,7 @@ def handle_buttons():
                 send_uart("B", "1", "0")
 
             elif button_number == 1:
-                print("Event: Released 1, Previous band")
+                print("Event: Released 1, Previous station")
                 send_uart("B", "1", "1")
 
             elif button_number == 2:
@@ -384,8 +385,9 @@ def handle_buttons():
                 send_uart("B", "1", "2")
 
             elif button_number == 3:
-                print("Event: Released 3, Next Band")
+                print("Event: Released 3, Next station")
                 send_uart("B", "1", "3")
+
             elif button_number == 4:
                 print("Event: Released 4, Fast Forward")
                 send_uart("B", "1", "4")
@@ -402,7 +404,7 @@ def handle_buttons():
                     settings.pi_zero_reset.value = True
 
             elif button_number == 1:
-                print("Event: Held 1, Prev Station")
+                print("Event: Held 1, Prev Band")
                 send_uart("B", "2", "1")
 
             elif button_number == 2:
@@ -410,7 +412,7 @@ def handle_buttons():
                 send_uart("B", "2", "2")
 
             elif button_number == 3:
-                print("Event: Held 3, Next Station")
+                print("Event: Held 3, Next Band")
                 send_uart("B", "2", "3")
 
             elif button_number == 4:
@@ -499,8 +501,9 @@ wait_for_pi() # Wait for the Pi Zero to be up and running
 wait_for_on_switch()
 resume_from_standby()
 
+
 while True:
-    now = time.time()
+    now = time.monotonic()
 
     if now - led_heartbeat_prev > settings.LED_HEARTBEAT_INTERVAL:
             blink_led()
@@ -518,37 +521,33 @@ while True:
         wait_for_pi()
 
     # Ultrasonic remote
+    if settings.REMOTE_ENABLED:
+        remote_button = pdm_audio.remote_detect(now)
 
-    if settings.REMOTE_ENABLED and tuning_switch_state:
-        highest_frequency = pdm_audio.determine_frequencies()
-        if now - remote_sample_time > settings.REMOTE_SAMPLE_RATE and highest_frequency:
-            remote_sample_time = now
-            remote_button = pdm_audio.determine_button(highest_frequency)
-            if remote_button == 0:
-                print("Remote: Channel Lower, Prev Station", highest_frequency)
-                send_uart("B", "1", "1")
-            if remote_button == 1:
-                volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
-                volume = max(volume - settings.DIGITAL_VOLUME_INCREMENT, 0)
-                if volume == 0 and on_off_state:
-                    standby()
-                send_uart("V", str(volume))
-                print("Volume On/Off, Volume down", volume, highest_frequency)
+        if remote_button == 0:
+            print("Remote: Channel Lower, Prev Station")
+            send_uart("B", "1", "1")
 
-            if remote_button == 2:
-                volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
-                volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
-                if not on_off_state:
-                    resume_from_standby()
-                send_uart("V", str(volume))
-                print("Volume On/Off, Volume Up", volume, highest_frequency)
+        elif remote_button == 1:
+            volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+            volume = max(volume - settings.DIGITAL_VOLUME_INCREMENT, 0)
+            if volume == 0 and on_off_state:
+                standby()
+            send_uart("V", str(volume))
+            print("Remote: Volume On/Off, Volume down", volume)
 
-            if remote_button == 3:
-                print("Remote: Channel Higher, Next Station", highest_frequency)
-                send_uart("B", "1", "3")
+        elif remote_button == 2:
+            volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+            volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
+            if not on_off_state:
+                resume_from_standby()
+            send_uart("V", str(volume))
+            print("Remote: Sound Mute, Volume Up", volume)
 
-            if remote_button == 4:
-                print("Remote: Unknown frequency", highest_frequency)
+        elif remote_button == 3:
+            print("Remote: Channel Higher, Next Station")
+            send_uart("B", "1", "3")
+
 
     handle_switches()
     handle_buttons()
@@ -562,7 +561,6 @@ while True:
             else:
                 brightness_control()
             check_tuning_knob()
-
 
     uart_message = receive_uart()
     if uart_message:

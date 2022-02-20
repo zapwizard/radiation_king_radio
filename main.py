@@ -413,9 +413,9 @@ def tuning():
 
     # Play at volume with no static when needle is close to station position
     if range_to_station <= lock_on_tolerance:
-        tuning_volume = volume
         if not tuning_locked:
             if active_station:
+                tuning_volume = volume
                 if nearest_station_num != station_num:
                     print("Tuning change: nearest_station_num",nearest_station_num,"!=",station_num)
                     select_station(nearest_station_num, True)
