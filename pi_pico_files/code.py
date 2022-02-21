@@ -525,8 +525,11 @@ while True:
         remote_button = pdm_audio.remote_detect(now)
 
         if remote_button == 0:
-            print("Remote: Channel Lower, Prev Station")
-            send_uart("B", "1", "1")
+            if on_off_state:
+                print("Remote: Channel Lower, Prev Station")
+                send_uart("B", "1", "1")
+            else:
+                resume_from_standby()
 
         elif remote_button == 1:
             volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
@@ -538,16 +541,21 @@ while True:
 
         elif remote_button == 2:
             volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
-            volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
+            if volume != 0:
+                volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
+            else:
+                volume = 0.008
             if not on_off_state:
                 resume_from_standby()
             send_uart("V", str(volume))
             print("Remote: Sound Mute, Volume Up", volume)
 
         elif remote_button == 3:
-            print("Remote: Channel Higher, Next Station")
-            send_uart("B", "1", "3")
-
+            if on_off_state:
+                print("Remote: Channel Higher, Next Station")
+                send_uart("B", "1", "3")
+            else:
+                resume_from_standby()
 
     handle_switches()
     handle_buttons()

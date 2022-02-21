@@ -35,16 +35,15 @@ def benchmark_capture():
         print(settings.REMOTE_SAMPLE_SIZE, "samples took", sample_duration_ns, "ns or", ns_per_sample, "ns per sample",
               "| Max Sample Frequency =", max_sample_freq)
 
+
 benchmark_capture()
 
 print("hz_per_sample:", hz_per_sample)  # Debug
-remote_high_pass = round(map_range(settings.REMOTE_FREQ_MIN,0,settings.REMOTE_SAMPLE_FREQUENCY,0,settings.REMOTE_SAMPLE_SIZE))
-print("remote_high_pass:",remote_high_pass)
+remote_pass_start = round(
+    map_range(settings.REMOTE_FREQ_MIN, 0, settings.REMOTE_SAMPLE_FREQUENCY, 0, settings.REMOTE_SAMPLE_SIZE))
+remote_pass_end = round(
+    map_range(settings.REMOTE_FREQ_MAX, 0, settings.REMOTE_SAMPLE_FREQUENCY, 0, settings.REMOTE_SAMPLE_SIZE))
 
-# Pad filter
-padded_filter = np.array([0] * settings.REMOTE_SAMPLE_SIZE)
-padded_filter[0:settings.FILTER.size] = settings.FILTER
-print("padded_filter.size:",padded_filter.size)
 
 def perform_fft(data):
     real, imaginary = np.fft.fft(np.array(data))  # Perform FFT
@@ -67,6 +66,7 @@ def determine_button(highest):
     else:
         return None
 
+
 def fft_convolve(a, b):
     # Must use numpy arrays, with sizes the power of 2 that match each other.
     a = np.fft.fft(a)
@@ -75,56 +75,93 @@ def fft_convolve(a, b):
     return inverse_fft[0]
 
 
-def remote_detect(now):
-    global samples, remote_sample_time, remote_high_pass, padded_filter
-    now = time.monotonic()
+def spectrogram_half(data):
+    data = spectrogram(data)
+    # Remove 2nd half (data is symmetrical)
+    return data[round(data.size / 2):]
+
+
+def plot_data(data_to_plot):
+    highest_value = np.max(data_to_plot)
+    lowest_value = np.min(data_to_plot)
+    for i, x in enumerate(data_to_plot):
+        print((lowest_value, highest_value, x))
+        time.sleep(0.02)
+
+
+def convolve_data(a, b, size):
+    convolved = np.convolve(np.array(a), b)
+    overage = round((len(convolved) - size) / 2)
+    return convolved[overage:len(convolved) - overage]
+
+
+# Expand the filter to REMOTE_SAMPLE_SIZE
+filter_expanded = np.ones(settings.REMOTE_SAMPLE_SIZE)
+filter_expanded = np.convolve(filter_expanded, settings.FILTER)
+overage = round((len(filter_expanded) - settings.REMOTE_SAMPLE_SIZE) / 2)
+filter_expanded = filter_expanded[overage:len(filter_expanded) - overage]
+
+
+def compare_methods(now):
+    global samples, remote_sample_time, remote_pass_start, remote_pass_end, filter_expanded
     mic.record(samples, settings.REMOTE_SAMPLE_SIZE)  # Capture samples
 
-    # Technique 1 Apply filter using np.convolve with slice to sample size
-    filtered_samples = np.convolve(np.array(samples), settings.FILTER)
-    overage = round((len(filtered_samples) - settings.REMOTE_SAMPLE_SIZE) / 2)
-    filtered_samples = filtered_samples[overage:len(filtered_samples) - overage]
+    # Apply filter using np.convolve with slice to sample size
+    convolve_time = time.monotonic()  # debug processing time
+    convolve_samples = convolve_data(samples, settings.FILTER, settings.REMOTE_SAMPLE_SIZE)
+    convolve_results = spectrogram_half(convolve_samples)
+    convolve_duration = time.monotonic() - convolve_time
 
-    # Technique 2 FFT based convolve
-    #filtered_samples = np.array(fft_convolve(np.array(samples), padded_filter))
+    # Pre-expanded filter
+    multiplication_time = time.monotonic()  # debug processing time
+    multiplication_samples = filter_expanded * samples
+    multiplication_results = spectrogram_half(multiplication_samples)
+    multiplication_duration = time.monotonic() - multiplication_time
 
-    # Technique 3 Slice instead of high_pass filter
-    #filtered_samples = np.array(samples)
-    #filtered_samples[:remote_high_pass] = 0
+    highest_energy = np.max(convolve_results)
+    if (
+            highest_energy > settings.REMOTE_THRESHOLD
+            or now - remote_sample_time > settings.REMOTE_SAMPLE_RATE
+    ):
 
-    #filtered_samples = np.array(samples[remote_high_pass:])
+        plot_data(convolve_results)
+        for x in range(5):
+            print((10, 10, 10))
+        plot_data(multiplication_results)
+        print("Convolve Technique took:", convolve_duration)
+        print("Multiplication took:", multiplication_duration)
 
-    # Perform FFT
-    #fft_results = perform_fft(filtered_samples)
-    fft_results = spectrogram(filtered_samples)
+        remote_sample_time = now
+        for _ in range(15):
+            print((0, 0, 0))
 
-    # Remove 2nd half (data is symmetrical)
-    fft_results = fft_results[round(len(fft_results) / 2):]
 
-    #lowest_energy = np.min(fft_results)
-    #median_energy = np.median(fft_results)
-    highest_energy = np.max(fft_results)
+def remote_detect(now):
+    global samples, remote_sample_time, remote_pass_start, remote_pass_end, filter_expanded
+    mic.record(samples, settings.REMOTE_SAMPLE_SIZE)  # Capture samples
 
+    # Apply filter using np.convolve with slice to sample size
+    convolve_time = time.monotonic()  # debug processing time
+    convolve_samples = convolve_data(samples, settings.FILTER, settings.REMOTE_SAMPLE_SIZE)
+    convolve_results = spectrogram_half(convolve_samples)
+    convolve_duration = time.monotonic() - convolve_time
+
+    highest_energy = np.max(convolve_results)
     if (
             now - remote_sample_time > settings.REMOTE_SAMPLE_RATE
             and highest_energy > settings.REMOTE_THRESHOLD
     ):
-        highest_address = np.argmax(fft_results)
-
-        # Plotter code for debug
-        # for i, _a in enumerate(fft_results):
-        #    print((lowest_energy, median_energy, highest_energy, _a))
-        #    time.sleep(0.02)
-
-        print("highest_address:", highest_address, "| highest_energy:", highest_energy, "processing time=",time.monotonic() - now)
+        highest_address = np.argmax(convolve_results)
+        print("highest_address:", highest_address, "| highest_energy:", highest_energy, "processing time=",convolve_duration)
 
         remote_sample_time = now
         remote_button = determine_button(highest_address)
+        highest_energy = None
         if remote_button is not None:
-            print("button:", remote_button)
+            #print("button:", remote_button)
             return remote_button
 
 # Debug
-#while True:
-#    now = time.monotonic()
-#    remote_detect(now)
+# while True:
+# now = time.monotonic()
+# remote_detect(now)
