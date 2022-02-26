@@ -493,7 +493,8 @@ def exit_script():
     #settings.serial.Close()
 
 if settings.REMOTE_ENABLED:
-    import pdm_audio
+    import ultrasonic_remote
+
 
 
 print("Startup: Pi Pico Started")
@@ -505,14 +506,17 @@ resume_from_standby()
 while True:
     now = time.monotonic()
 
+    # Blink the LED to know the code is running
     if now - led_heartbeat_prev > settings.LED_HEARTBEAT_INTERVAL:
             blink_led()
             led_heartbeat_prev = now
 
+    # Send a heartbeat signal to the Pi Zero
     if now - uart_heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
             send_uart("H", "Pico")
             uart_heartbeat_time = now
 
+    # Go into standby if lost contact with the Pi Zero
     if now - pi_zero_heartbeat_time > settings.PI_ZERO_HEARTBEAT_TIMEOUT:
         print("Timeout: Pi Zero Heartbeat not received")
         pi_zero_heartbeat_time = now
@@ -521,8 +525,8 @@ while True:
         wait_for_pi()
 
     # Ultrasonic remote
-    if settings.REMOTE_ENABLED:
-        remote_button = pdm_audio.remote_detect(now)
+    if settings.REMOTE_ENABLED and now > settings.REMOTE_SAMPLE_RATE:
+        remote_button = ultrasonic_remote.remote_detect()
 
         if remote_button == 0:
             if on_off_state:

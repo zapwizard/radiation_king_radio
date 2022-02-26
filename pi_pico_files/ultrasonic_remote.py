@@ -1,12 +1,10 @@
 # Code prototype for ultrasonic PDM microphone
 # Waiting for a Circuitpython patch before development can continue
 
-import sys
 import board
 import audiobusio
 import array
 import time
-import math
 from ulab import numpy as np
 from ulab.scipy.signal import spectrogram
 import digitalio
@@ -38,11 +36,13 @@ def benchmark_capture():
 
 benchmark_capture()
 
-print("hz_per_sample:", hz_per_sample)  # Debug
 remote_pass_start = round(
     map_range(settings.REMOTE_FREQ_MIN, 0, settings.REMOTE_SAMPLE_FREQUENCY, 0, settings.REMOTE_SAMPLE_SIZE))
 remote_pass_end = round(
     map_range(settings.REMOTE_FREQ_MAX, 0, settings.REMOTE_SAMPLE_FREQUENCY, 0, settings.REMOTE_SAMPLE_SIZE))
+print("hz_per_sample:", hz_per_sample, "| remote_pass_start:", remote_pass_start, "| remote_pass_end",
+      remote_pass_end)  # Debug
+time.sleep(2)
 
 
 def perform_fft(data):
@@ -67,18 +67,18 @@ def determine_button(highest):
         return None
 
 
-def fft_convolve(a, b):
-    # Must use numpy arrays, with sizes the power of 2 that match each other.
-    a = np.fft.fft(a)
-    b = np.fft.fft(b)
-    inverse_fft = np.fft.ifft(a[0] * b[0])
-    return inverse_fft[0]
+# def fft_convolve(a, b):
+# Must use numpy arrays, with sizes the power of 2 that match each other.
+#   a = np.fft.fft(a)
+#  b = np.fft.fft(b)
+# inverse_fft = np.fft.ifft(a[0] * b[0])
+# return inverse_fft[0]
 
 
 def spectrogram_half(data):
     data = spectrogram(data)
-    # Remove 2nd half (data is symmetrical)
-    return data[round(data.size / 2):]
+    # Return 2nd half of the data (data is symmetrical)
+    return data[:round(data.size / 2)]
 
 
 def plot_data(data_to_plot):
@@ -95,73 +95,70 @@ def convolve_data(a, b, size):
     return convolved[overage:len(convolved) - overage]
 
 
-# Expand the filter to REMOTE_SAMPLE_SIZE
-filter_expanded = np.ones(settings.REMOTE_SAMPLE_SIZE)
-filter_expanded = np.convolve(filter_expanded, settings.FILTER)
-overage = round((len(filter_expanded) - settings.REMOTE_SAMPLE_SIZE) / 2)
-filter_expanded = filter_expanded[overage:len(filter_expanded) - overage]
-
-
 def compare_methods(now):
-    global samples, remote_sample_time, remote_pass_start, remote_pass_end, filter_expanded
+    global remote_sample_time, remote_pass_start, remote_pass_end, samples
     mic.record(samples, settings.REMOTE_SAMPLE_SIZE)  # Capture samples
 
     # Apply filter using np.convolve with slice to sample size
-    convolve_time = time.monotonic()  # debug processing time
-    convolve_samples = convolve_data(samples, settings.FILTER, settings.REMOTE_SAMPLE_SIZE)
-    convolve_results = spectrogram_half(convolve_samples)
-    convolve_duration = time.monotonic() - convolve_time
+    #convolve_time = time.monotonic()  # debug processing time
+    #convolve_samples = convolve_data(samples, settings.FILTER, settings.REMOTE_SAMPLE_SIZE)
+    #convolve_results = spectrogram_half(convolve_samples)
+    #convolve_results = convolve_results[remote_pass_start:remote_pass_end]
+    #convolve_highest = np.argmax(convolve_results)
+    #convolve_duration = time.monotonic() - convolve_time
 
-    # Pre-expanded filter
+
+    # Apply window to signal results:
     multiplication_time = time.monotonic()  # debug processing time
-    multiplication_samples = filter_expanded * samples
+    multiplication_samples = np.array(samples) * settings.WINDOW
     multiplication_results = spectrogram_half(multiplication_samples)
+    multiplication_results = multiplication_results[remote_pass_start:remote_pass_end]
+    multiplication_highest = np.argmax(multiplication_results)
     multiplication_duration = time.monotonic() - multiplication_time
 
-    highest_energy = np.max(convolve_results)
+
+    highest_energy = np.max(multiplication_results)
     if (
             highest_energy > settings.REMOTE_THRESHOLD
-            or now - remote_sample_time > settings.REMOTE_SAMPLE_RATE
+            and now - remote_sample_time > settings.REMOTE_SAMPLE_RATE
     ):
 
-        plot_data(convolve_results)
-        for x in range(5):
-            print((10, 10, 10))
-        plot_data(multiplication_results)
-        print("Convolve Technique took:", convolve_duration)
-        print("Multiplication took:", multiplication_duration)
+        #plot_data(convolve_results)
+        #for x in range(5):
+            #print((10, 10, 10))
+        #plot_data(multiplication_results)
+        #print("Convolve took:", convolve_duration, "| Highest address:", convolve_highest, "| max energy", np.max(convolve_results))
+        print("Multiplication took:", multiplication_duration, "| Highest address:", multiplication_highest, "| max energy", np.max(multiplication_results))
 
         remote_sample_time = now
-        for _ in range(15):
-            print((0, 0, 0))
-
-
-def remote_detect(now):
-    global samples, remote_sample_time, remote_pass_start, remote_pass_end, filter_expanded
-    mic.record(samples, settings.REMOTE_SAMPLE_SIZE)  # Capture samples
-
-    # Apply filter using np.convolve with slice to sample size
-    convolve_time = time.monotonic()  # debug processing time
-    convolve_samples = convolve_data(samples, settings.FILTER, settings.REMOTE_SAMPLE_SIZE)
-    convolve_results = spectrogram_half(convolve_samples)
-    convolve_duration = time.monotonic() - convolve_time
-
-    highest_energy = np.max(convolve_results)
-    if (
-            now - remote_sample_time > settings.REMOTE_SAMPLE_RATE
-            and highest_energy > settings.REMOTE_THRESHOLD
-    ):
-        highest_address = np.argmax(convolve_results)
-        print("highest_address:", highest_address, "| highest_energy:", highest_energy, "processing time=",convolve_duration)
-
-        remote_sample_time = now
-        remote_button = determine_button(highest_address)
-        highest_energy = None
+        remote_button = determine_button(multiplication_highest)
         if remote_button is not None:
-            #print("button:", remote_button)
+            print("button:", remote_button)
+
+        #for _ in range(15):
+        #        print((0, 0, 0))
+
+
+def remote_detect():
+    global remote_pass_start, remote_pass_end, samples
+    samples = array.array('B', [0] * settings.REMOTE_SAMPLE_SIZE)
+    mic.record(samples, settings.REMOTE_SAMPLE_SIZE)  # Capture samples
+    windowed = np.array(samples) * settings.WINDOW  # Apply window
+    results = spectrogram_half(windowed)  # Spectrogram data
+    cropped = results[remote_pass_start:remote_pass_end]  # Crop to interested frequencies
+    highest_energy = np.max(cropped)
+    if highest_energy > settings.REMOTE_THRESHOLD:
+        highest_address = np.argmax(cropped)
+        print("highest_address:", highest_address, "| highest_energy:", highest_energy)
+        remote_button = determine_button(highest_address)
+        if remote_button is not None:
+            # print("button:", remote_button)
             return remote_button
 
+
 # Debug
-# while True:
-# now = time.monotonic()
-# remote_detect(now)
+#while True:
+#    now = time.monotonic()
+#    compare_methods(now)
+
+

@@ -34,7 +34,7 @@ STATIC_SOUNDS_FOLDER = "sounds/Static_Chunks"  # Place multiple static noise fil
 STATIC_VOLUME = 0.1  # 0-1
 STATIC_VOLUME_MIN = 0.008  # Minimum static level, used to ensure some static at low volumes (Over ridden if volume is zero)
 VOLUME_STEP = 0.008 # 0.008 seems to be the lowest volume level possible
-VOLUME_MIN = 0  # Use static_volume_min if you want the radio to never be completely silent
+VOLUME_MIN = STATIC_VOLUME_MIN  # Use static_volume_min if you want the radio to never be completely silent
 FAST_FORWARD_INCREMENT = 5  # in seconds
 REWIND_INCREMENT = 5 # in seconds
 

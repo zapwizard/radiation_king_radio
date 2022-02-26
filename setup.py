@@ -137,7 +137,7 @@ if PI:
         try:
             uart = serial.Serial(settings.SERIAL_PORT, settings.BAUD_RATE, timeout=settings.UART_TIMEOUT)
         except:
-            time.sleep(5)
+            time.sleep(3)
     try:
         uart.write(b'I,Serial Start\n')  # write a string
         print("Startup: Opened UART port:", uart.name)  # check which port was really used
