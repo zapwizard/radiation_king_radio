@@ -753,7 +753,7 @@ class Radiostation:
 
 
     def live_playback(self):
-        global volume, tuning_volume
+        global volume
         #self.start_pos = 0
         if self.files:
             self.start_pos = max(time.time() - self.start_time, 0)
@@ -793,7 +793,7 @@ class Radiostation:
                 pygame.mixer.music.play(0, self.start_pos)
             except:
                 pygame.mixer.music.play(0, 0)
-            pygame.mixer.music.set_volume(tuning_volume)
+            pygame.mixer.music.set_volume(volume)
 
             self.state = self.STATES['playing']
 
@@ -835,7 +835,7 @@ class Radiostation:
 
 
     def next_song(self):
-        global tuning_volume
+        global volume
         self.files.rotate(-1)
         self.song_lengths.rotate(-1)
         self.start_time = time.time()
@@ -852,7 +852,7 @@ class Radiostation:
             pygame.mixer.music.play(0, self.start_pos)
         except:
             pygame.mixer.music.play(0, 0)
-        pygame.mixer.music.set_volume(tuning_volume)
+        pygame.mixer.music.set_volume(volume)
         self.state = self.STATES['playing']
 
 
