@@ -136,12 +136,13 @@ def map_range(x, in_min, in_max, out_min, out_max):
 
 def blink_led():
     global led_state
-    if led_state:
-        os.system('echo 0 | sudo dd status=none of=/sys/class/leds/led0/brightness')  # led on
-        led_state = False
-    else:
-        os.system('echo 1 | sudo dd status=none of=/sys/class/leds/led0/brightness')  # led off
-        led_state = True
+    if not settings.DISABLE_HEARTBEAT_LED:
+        if led_state:
+            os.system('echo 0 | sudo dd status=none of=/sys/class/leds/led0/brightness')  # led on
+            led_state = False
+        else:
+            os.system('echo 1 | sudo dd status=none of=/sys/class/leds/led0/brightness')  # led off
+            led_state = True
 
 
 def set_volume_level(volume_level, direction=None):
@@ -559,6 +560,7 @@ def wait_for_pico():
         if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
             send_uart("H", "Zero")
             print("Waiting: Sending Heartbeat to Pico")
+            blink_led()
             heartbeat_time = now
             uart_message = receive_uart()
         if uart_message:
@@ -787,11 +789,11 @@ class Radiostation:
                   )
 
             pygame.mixer.music.load(song)
-            pygame.mixer.music.set_volume(tuning_volume)
             try:
                 pygame.mixer.music.play(0, self.start_pos)
             except:
                 pygame.mixer.music.play(0, 0)
+            pygame.mixer.music.set_volume(tuning_volume)
 
             self.state = self.STATES['playing']
 
@@ -846,11 +848,11 @@ class Radiostation:
               "start_pos =", str(round(self.start_pos, 2))
               )
         pygame.mixer.music.load(song)
-        pygame.mixer.music.set_volume(tuning_volume)
         try:
             pygame.mixer.music.play(0, self.start_pos)
         except:
             pygame.mixer.music.play(0, 0)
+        pygame.mixer.music.set_volume(tuning_volume)
         self.state = self.STATES['playing']
 
 

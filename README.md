@@ -21,7 +21,7 @@ This is still at work in progress. [See the project log](https://www.therpf.com/
 - Playback ordered or randomized stations
 - Standby mode
 - Neopixel lights with warm start/shutdown effect
-- Ultrasonic Remote Control
+- Ultrasonic Remote Control (Disabled by default)
 
 
 #Licence:

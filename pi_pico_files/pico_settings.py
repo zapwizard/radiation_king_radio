@@ -7,6 +7,12 @@ import pwmio
 import analogio
 from ulab import numpy as np
 
+# Misc:
+DISABLE_HEARTBEAT_LED = False # Note you won't be able to determine if the code is running without using a terminal
+
+# Sweep: The movement of the dial at startup and during band changes.
+SWEEP_DELAY = 0.003 # The speed at which the dial sweeps across the range
+
 # Uart Related
 UART_HEARTBEAT_INTERVAL = 3
 PI_ZERO_HEARTBEAT_TIMEOUT = 30 # must be greater than the heartbeat interval on pi zero
@@ -117,13 +123,16 @@ MOTOR_MID_POINT = (MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN) / 2 + 15
 MOTOR_RANGE = MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN
 
 # Ultrasonic Remote Related
-REMOTE_ENABLED = False
+REMOTE_ENABLED = True
+REMOTE_CLK_PIN = board.GP3
+REMOTE_DATA_PIN = board.GP4
+REMOTE_SELECT_PIN = board.GP5
 REMOTE_THRESHOLD = 200 # Minimum signal level needed to trigger a response
 REMOTE_FREQ_MIN = 28000
 REMOTE_FREQ_MAX = 41000
 REMOTE_SAMPLE_FREQUENCY = 82000
 REMOTE_SAMPLE_SIZE = 512  # the larger this number, the greater address separation, but slower processing time
-REMOTE_SAMPLE_RATE = 0.3 # Float, Seconds
+REMOTE_SAMPLE_RATE = 0.4 # Float, Seconds
 REMOTE_HALF_SAMPLE_SIZE = round(REMOTE_SAMPLE_SIZE/2)
 REMOTE_TOLERANCE = 4 # How close to the address do we need to get
 

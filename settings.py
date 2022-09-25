@@ -20,6 +20,7 @@ ACTIONS = {
 GPIO_ACTIONS = {
     17: "power_off",  # GPIO 17
 }
+DISABLE_HEARTBEAT_LED = False # Note you won't be able to determine if the code is running without using a terminal
 
 # To speed up the boot process: Song and station data caching is used
 # Anytime you change your music files, you must set the value of RESET_CACHE to True and then reboot

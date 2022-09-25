@@ -9,7 +9,6 @@ from adafruit_simplemath import map_range, constrain
 import atexit
 import usb_cdc
 
-
 ## globals:
 # ADC Related:
 volume_prev = 0
@@ -37,7 +36,6 @@ usb_cdc.console.timeout = settings.UART_TIMEOUT
 usb_cdc.data.timeout = settings.UART_TIMEOUT
 uart_line = None
 brightness_smoothed = 0
-
 
 def receive_uart():
     global uart_line
@@ -154,7 +152,8 @@ def test_motor():
     print("Middle angle")
 
 def blink_led():
-    settings.led.value = not settings.led.value
+    if not settings.DISABLE_HEARTBEAT_LED:
+        settings.led.value = not settings.led.value
 
 def get_button_states():
     button_event = settings.buttons.events.get()
@@ -198,7 +197,7 @@ def brightness_control():
     settings.GAUGE_PIXEL_MAX_BRIGHTNESS = map_range(get_volume_adc(), settings.VOLUME_ADC_MIN, settings.VOLUME_ADC_MAX, 0, 1)
     brightness_smoothed = round(settings.BRIGHTNESS_SMOOTHING * settings.GAUGE_PIXEL_MAX_BRIGHTNESS + (1 - settings.BRIGHTNESS_SMOOTHING) * brightness_smoothed, 3)
     settings.gauge_pixels.brightness = brightness_smoothed
-    print("DEBUG: Brightness:",brightness_smoothed)
+    #print("DEBUG: Brightness:",brightness_smoothed)
 
 def get_volume_adc():
     global VOLUME_ADC_smoothed
@@ -242,7 +241,7 @@ def check_volume_knob():
         volume = volume_setting
         send_uart("V", str(volume))
         volume_dead_zone = settings.VOLUME_DEAD_ZONE
-        print("DEBUG Volume:",volume, VOLUME_ADC_smoothed, settings.VOLUME_ADC.value)
+        #print("DEBUG: Volume:",volume, VOLUME_ADC_smoothed, settings.VOLUME_ADC.value)
 
 
 def check_tuning_knob():
@@ -258,7 +257,7 @@ def check_tuning_knob():
 def resume_from_standby():
     global on_off_state
     if not on_off_state:
-        print("Info: Resume from standby")
+        print("STATE: Resume from standby")
         settings.buttons.events.clear()
         settings.switches.events.clear()
         on_off_state = True
@@ -268,7 +267,7 @@ def resume_from_standby():
 def standby():
     global on_off_state
     if on_off_state:
-        print("Info: Going into standby")
+        print("STATE: Going into standby")
         on_off_state = False
         send_uart("P", "0")
         soft_stop()
@@ -281,10 +280,10 @@ def sweep(restore_angle):
         set_motor(angle)
         set_pixels(brightness / settings.NEOPIXEL_RANGE)
         #print("DEBUG: sweep:", angle, brightness)
-        time.sleep(0.01)
+        time.sleep(settings.SWEEP_DELAY)
     if restore_angle:
         time.sleep(0.2)
-        print("Sweep: restore_angle=", restore_angle)
+        print("STATE: Sweep with restore_angle=", restore_angle)
         set_motor(restore_angle)
 
 
@@ -349,26 +348,27 @@ def wait_for_pi():
         if supervisor.runtime.usb_connected:
             settings.gauge_pixels.fill((32, 32, 0, 0))
         else:
-            settings.gauge_pixels.fill((32, 0, 0, 0))
+            settings.gauge_pixels.fill((16, 0, 0, 0))
         blink_led()
         usb_cdc.data.flush()
-        uart_message = receive_uart()
-        if uart_message:
-            print("Waiting: UART echo:",uart_message)
+        uart_data = receive_uart()
+        if uart_data:
+            print("Waiting: UART echo:",uart_data)
             try:
                 if (
-                    uart_message[0] == "H"
-                    and uart_message[1]
-                    and len(uart_message) > 1
-                    and uart_message[1] == "Zero"
+                    uart_data[0] == "H"
+                    and uart_data[1]
+                    and len(uart_data) > 1
+                    and uart_data[1] == "Zero"
                 ):
                     print("From Zero: Pi Zero Heartbeat received")
                     pi_state = True
                     pi_zero_heartbeat_time = time.time()
-            except Exception as error:
-                print("Error: Uart,", error)
+            except Exception as e:
+                print("Error: Uart,", e)
     handle_buttons()
     time.sleep(0.1)
+
 
 def wait_for_on_switch():
     settings.gauge_pixels.fill((0, 16, 0, 0))
@@ -442,8 +442,16 @@ def handle_buttons():
             send_uart("B", "2", "3")
 
         elif button_number == 4:
-            print("EVENT: Held 4, Next Song")
-            send_uart("B", "2", "4")
+            if on_off_state:
+                print("EVENT: Held 4, Next Song")
+                send_uart("B", "2", "4")
+            else:
+                print("Button 4 held while off: Telling Pi Zero to shutdown")
+                settings.gauge_pixels.fill((255, 255, 0, 0))
+                time.sleep(2)
+                settings.gauge_pixels.fill((0, 55, 0, 0))
+                send_uart("P", "3")
+
 
 def handle_switches():
     global volume_switch_state, tuning_switch_state
@@ -513,34 +521,36 @@ while True:
             if on_off_state:
                 print("REMOTE: Channel Lower, Prev Station")
                 send_uart("B", "1", "1")
-            else:
-                resume_from_standby()
 
         elif remote_button == 1:
-            volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
-            volume = max(volume - settings.DIGITAL_VOLUME_INCREMENT, 0)
-            if volume == 0 and on_off_state:
-                standby()
-            send_uart("V", str(volume))
-            print("REMOTE: Volume On/Off, Volume down", volume)
+            if on_off_state:
+                volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+                volume = max(volume - settings.DIGITAL_VOLUME_INCREMENT, 0)
+                if volume == 0:
+                    standby()
+                send_uart("V", str(volume))
+                print("REMOTE: Volume On/Off, Volume down", volume)
 
         elif remote_button == 2:
-            volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
-            if volume != 0:
-                volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
+            if on_off_state:
+                volume_dead_zone = settings.DIGITAL_VOLUME_DEAD_ZONE
+                if volume != 0:
+                    volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
+                else:
+                    volume = 0.008
+                send_uart("V", str(volume))
+                print("REMOTE: Sound Mute, Volume Up", volume)
             else:
-                volume = 0.008
-            if not on_off_state:
                 resume_from_standby()
-            send_uart("V", str(volume))
-            print("REMOTE: Sound Mute, Volume Up", volume)
+                volume = min(volume + settings.DIGITAL_VOLUME_INCREMENT, 1)
+                print("REMOTE: Volume On/Off, Resume from Stand-by", volume)
+
 
         elif remote_button == 3:
             if on_off_state:
                 print("REMOTE: Channel Higher, Next Station")
                 send_uart("B", "1", "3")
-            else:
-                resume_from_standby()
+
 
     handle_switches()
     handle_buttons()

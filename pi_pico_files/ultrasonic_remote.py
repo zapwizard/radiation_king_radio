@@ -11,13 +11,15 @@ import digitalio
 import pico_settings as settings
 from adafruit_simplemath import map_range
 
-pdm_select = digitalio.DigitalInOut(board.GP2)
+pdm_select = digitalio.DigitalInOut(settings.REMOTE_SELECT_PIN)
 pdm_select.direction = digitalio.Direction.OUTPUT
 pdm_select.value = False  # Enable ultrasonic mode
 remote_sample_time = 0
 hz_per_sample = settings.REMOTE_SAMPLE_FREQUENCY / settings.REMOTE_SAMPLE_SIZE
 
-mic = audiobusio.PDMIn(board.GP3, board.GP4, sample_rate=settings.REMOTE_SAMPLE_FREQUENCY, bit_depth=8, mono=True)
+print("INFO: Ultrasonic remote control enabled")
+
+mic = audiobusio.PDMIn(settings.REMOTE_CLK_PIN, settings.REMOTE_DATA_PIN, sample_rate=settings.REMOTE_SAMPLE_FREQUENCY, bit_depth=8, mono=True)
 print("SAMPLE_SIZE=", settings.REMOTE_SAMPLE_SIZE, "SAMPLE_FREQUENCY=", settings.REMOTE_SAMPLE_FREQUENCY,
       "returned mic.sample_rate=", mic.sample_rate)
 samples = array.array('B', [0] * settings.REMOTE_SAMPLE_SIZE)
