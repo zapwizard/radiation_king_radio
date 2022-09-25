@@ -55,10 +55,10 @@ SOUND_ON = "sounds/UI_Pipboy_Radio_On.ogg"
 SOUND_BAND_CHANGE = "sounds/Band_Change.ogg"
 
 #Uart Related:
-BAUD_RATE = 115200
-UART_TIMEOUT = 0.05
-UART_HEARTBEAT_INTERVAL = 3
-PICO_HEARTBEAT_TIMEOUT = 15 #Must be larger than the sending interval on Pi Pico
+BAUD_RATE = 115200 #115200 is the default, 9600 will cause slow performance.
+UART_TIMEOUT = 0.1
+UART_HEARTBEAT_INTERVAL = 2
+PICO_HEARTBEAT_TIMEOUT = 30 #Must be larger than the sending interval on Pi Pico
 SERIAL_PORT = "/dev/ttyACM1" # use for USB serial data exchange
 #serial_port = "/dev/serial0 " # use for UART pins
 

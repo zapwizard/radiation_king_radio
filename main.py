@@ -1,5 +1,4 @@
-# Licence: Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
-# Written by ZapWizard (Joshua Driggs)
+# Licence: Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) Written by ZapWizard (Joshua Driggs)
 
 #!/usr/bin/python3
 import atexit
@@ -561,9 +560,9 @@ def wait_for_pico():
             send_uart("H", "Zero")
             print("Waiting: Sending Heartbeat to Pico")
             heartbeat_time = now
-        uart_message = receive_uart()
+            uart_message = receive_uart()
         if uart_message:
-            print("UART:", uart_message)
+            #print("UART:", uart_message)
             try:
                 if uart_message[0] == "H":
                     if len(uart_message) > 1 and uart_message[1] and uart_message[1] == "Pico":
@@ -578,7 +577,7 @@ def wait_for_pico():
                         shutdown_zero()
 
             except Exception as error:
-                print("UART Error:", error)
+                print("ERROR: UART:", error)
 
 def shutdown_zero():
     print("Info: Doing a full shutdown")
@@ -588,19 +587,24 @@ def shutdown_zero():
 def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
     if setup.uart:
         if not setup.uart.is_open:
+            print("ERROR: UART is not open")
             return
         try:
             #print("Message:","<",command_type,",",data1,",",data2,",",data3,",",data4,",>")  # Debug (Slow)
             setup.uart.write(bytes(f"{command_type},{data1},{data2},{data3},{data4},\n","utf-8"))
         except Exception as error:
             _, err, _ = sys.exc_info()
-            print("UART Error: (%s)" % err, error)
+            print("ERROR: UART: (%s)" % err, error)
 
 
 def receive_uart():
     if not setup.uart:
         return
     if not setup.uart.is_open:
+        try:
+            setup.uart.open()
+        except Exception as error:
+            print("UART Open Error:", error)
         return
     try:
         line = setup.uart.readline() # Read data until "\n" or timeout
