@@ -350,7 +350,7 @@ def get_radio_bands(station_folder):
     return radio_bands
 
 
-# Find the angle address of a radio station
+# Find the angular location of a radio station
 def get_station_pos(station_number):
     global total_station_num, tuning_sensitivity
     return round(
@@ -358,8 +358,8 @@ def get_station_pos(station_number):
             station_number,
             0,
             total_station_num - 1,
-            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity * settings.TUNING_NEAR),
-            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity * settings.TUNING_NEAR),
+            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),
+            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),
         ),
         1,
     )
@@ -371,8 +371,8 @@ def get_nearest_station(angle):
     nearest_station = round(
         map_range(
             angle,
-            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity * settings.TUNING_NEAR),
-            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity * settings.TUNING_NEAR),
+            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),
+            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),
             0,
             total_station_num - 1,
         )
@@ -414,21 +414,21 @@ def tuning():
     # Play at volume with no static when needle is close to station position
     if range_to_station <= lock_on_tolerance:
         if not tuning_locked:
+            tuning_volume = volume
             if active_station:
-                tuning_volume = volume
                 if nearest_station_num != station_num:
                     print("Tuning change: nearest_station_num",nearest_station_num,"!=",station_num)
-                    select_station(nearest_station_num, True)
+                    select_station(nearest_station_num, False)
                     print("Tuning: Locked to station #", nearest_station_num,
                           "at angle:", station_position,
                           "Needle angle=", motor_angle,
                           "Lock on tolerance=", lock_on_tolerance)
-                    pygame.mixer.music.set_volume(volume)
+                pygame.mixer.music.set_volume(volume)
             play_static(False)
             tuning_locked = True
 
     # Start playing audio with static when the needle get near a station position
-    elif lock_on_tolerance < range_to_station < tuning_sensitivity * settings.TUNING_NEAR:
+    elif range_to_station < tuning_sensitivity / settings.TUNING_NEAR:
         tuning_volume = round(volume / range_to_station, 3)
         pygame.mixer.music.set_volume(tuning_volume)
 

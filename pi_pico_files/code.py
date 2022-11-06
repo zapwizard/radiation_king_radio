@@ -46,8 +46,6 @@ def receive_uart():
                 uart_line = usb_cdc.data.read(available)
                 available = usb_cdc.data.in_waiting
 
-            #uart_line = usb_cdc.data.readline() # Read data until "\n" or timeout. This line is blocking if there is no data in the buffer.
-
             if uart_line:
                 #print("DEBUG: UART_LINE:", uart_line)
                 if type(uart_line) is bytes:
@@ -374,6 +372,8 @@ def wait_for_on_switch():
     settings.gauge_pixels.fill((0, 16, 0, 0))
     print("Startup: Waiting for on switch")
     while not volume_switch_state:
+        time.sleep(0.1)
+        send_uart("H", "Pico")
         handle_switches()
         handle_buttons()
         time.sleep(0.2)

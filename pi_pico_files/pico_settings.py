@@ -76,8 +76,8 @@ DIGITAL_VOLUME_DEAD_ZONE = 0.1
 DIGITAL_VOLUME_INCREMENT = 0.13
 
 #Buttons:
-buttons = keypad.Keys((board.GP9,board.GP10,board.GP11,board.GP12,board.GP13),value_when_pressed=False, pull=True, interval=0.05) # Reversed order during breadboard layout
-#buttons = keypad.Keys((board.GP13,board.GP12,board.GP11,board.GP10,board.GP9),value_when_pressed=False, pull=True, interval=0.05)
+#buttons = keypad.Keys((board.GP9,board.GP10,board.GP11,board.GP12,board.GP13),value_when_pressed=False, pull=True, interval=0.05) # Reversed order during breadboard layout
+buttons = keypad.Keys((board.GP13,board.GP12,board.GP11,board.GP10,board.GP9),value_when_pressed=False, pull=True, interval=0.05) # PCB oder
 BUTTON_QUANTITY = 5
 BUTTON_SHORT_PRESS = 60 # in ms
 BUTTON_LONG_PRESS = 2000 # in ms
@@ -123,7 +123,7 @@ MOTOR_MID_POINT = (MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN) / 2 + 15
 MOTOR_RANGE = MOTOR_ANGLE_MAX - MOTOR_ANGLE_MIN
 
 # Ultrasonic Remote Related
-REMOTE_ENABLED = True
+REMOTE_ENABLED = False
 REMOTE_CLK_PIN = board.GP3
 REMOTE_DATA_PIN = board.GP4
 REMOTE_SELECT_PIN = board.GP5

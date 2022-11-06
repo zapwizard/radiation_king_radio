@@ -32,7 +32,7 @@ RESET_CACHE = False
 # Music related
 STATIONS_ROOT_FOLDER = "radio/"
 STATIC_SOUNDS_FOLDER = "sounds/Static_Chunks"  # Place multiple static noise files here to randomize the noise
-STATIC_VOLUME = 0.1  # 0-1
+STATIC_VOLUME = 0.08  # 0-1 float
 STATIC_VOLUME_MIN = 0.008  # Minimum static level, used to ensure some static at low volumes (Over ridden if volume is zero)
 VOLUME_STEP = 0.008 # 0.008 seems to be the lowest volume level possible
 VOLUME_MIN = STATIC_VOLUME_MIN  # Use static_volume_min if you want the radio to never be completely silent
@@ -40,13 +40,13 @@ FAST_FORWARD_INCREMENT = 5  # in seconds
 REWIND_INCREMENT = 5 # in seconds
 
 # Tuning related:
-TUNING_NEAR = 0.3 # 0 - 1Adjusts how near you need to be to hear a station in the static while turning
-TUNING_LOCK_ON = 8  # Adjusts how precise you need to be to land on a station (must be larger than tuning_near)
-BAND_CHANGE_VOLUME = 1 # How loud the band changing sound effect is played (Divisor of current volume)
-EFFECTS_VOLUME = 0.8 # How loud the on/off and other sound effects are played
+TUNING_NEAR = 3 # Adjusts how near you need to be to hear a station in the static while turning
+TUNING_LOCK_ON = 5  # Adjusts how precise you need to be to land on a station (Higher = more accuracy required, must be larger than tuning_near)
+BAND_CHANGE_VOLUME = 0.5 # Float: How loud the band changing sound effect is played (Multiplier of current volume)
+EFFECTS_VOLUME = 0.6 # How loud the on/off and other sound effects are played
 
 # Air Core Motor Related:
-MOTOR_MIN_ANGLE = 14 # This must match the numbers iun pico_settings.py
+MOTOR_MIN_ANGLE = 14 # This must match the numbers in pico_settings.py
 MOTOR_MAX_ANGLE = 168
 MOTOR_RANGE = MOTOR_MAX_ANGLE - MOTOR_MIN_ANGLE
 
