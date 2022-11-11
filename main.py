@@ -89,7 +89,7 @@ print("Info: Loaded", len(static_sounds), "static sound files")
 
 
 def set_motor(angle, manual = False):  # Tell the motor controller what angle to set, used for manual tuning
-    global motor_angle
+    global motor_angle, tuning_locked
     motor_angle = angle
     if manual:
         send_uart("M", motor_angle)
@@ -128,6 +128,8 @@ def load_saved_settings():
 
 
 def map_range(x, in_min, in_max, out_min, out_max):
+    if in_max <= 0 or in_max == in_min:
+        in_max = in_min + 0.001
     if out_min <= out_max:
         return max(min((x-in_min) * (out_max - out_min) / (in_max-in_min) + out_min, out_max), out_min)
     else:
@@ -203,9 +205,10 @@ def resume_from_standby():
         volume_settings, station_number, radio_band_number = load_saved_settings()
         set_volume_level(volume_settings)
         print("Tuning: Loading saved station number", station_number)
-        select_band(radio_band_number, get_station_pos(station_number))
-        #select_station(station_number, True)
         play_static(False)
+        select_band(radio_band_number, get_station_pos(station_number))
+        if not settings.SWEEP_ENABLED:
+            send_uart("C", "NoSweep")
 
 
 def handle_action(action):
@@ -353,30 +356,13 @@ def get_radio_bands(station_folder):
 # Find the angular location of a radio station
 def get_station_pos(station_number):
     global total_station_num, tuning_sensitivity
-    return round(
-        map_range(
-            station_number,
-            0,
-            total_station_num - 1,
-            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),
-            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),
-        ),
-        1,
-    )
+    return round(map_range(station_number,0,total_station_num - 1,settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),),1,)
 
 
 # Determine the nearest radio station to a certain motor angle
 def get_nearest_station(angle):
     global tuning_sensitivity, total_station_num
-    nearest_station = round(
-        map_range(
-            angle,
-            settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),
-            settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),
-            0,
-            total_station_num - 1,
-        )
-    )
+    nearest_station = round(map_range(angle,settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),0,total_station_num - 1,))
     if nearest_station >= total_station_num:
         nearest_station = total_station_num - 1
     return nearest_station
@@ -399,12 +385,12 @@ def play_static(play):
 
 
 # Tune into a station based on the motor angle
-def tuning():
+def tuning(manual=False):
     global motor_angle, volume, static_sounds, tuning_locked, tuning_prev_angle
     global active_station, tuning_volume, tuning_sensitivity, station_num
 
-    if motor_angle == tuning_prev_angle: # Do nothing if the angle is unchanged
-        return
+    #if motor_angle == tuning_prev_angle and not manual: # Do nothing if the angle is unchanged
+    #    return
 
     nearest_station_num = get_nearest_station(motor_angle) # Find the nearest radio station to the needle position
     station_position = get_station_pos(nearest_station_num)  # Get the exact angle of that station
@@ -415,36 +401,36 @@ def tuning():
     if range_to_station <= lock_on_tolerance:
         if not tuning_locked:
             tuning_volume = volume
-            if active_station:
-                if nearest_station_num != station_num:
-                    print("Tuning change: nearest_station_num",nearest_station_num,"!=",station_num)
-                    select_station(nearest_station_num, False)
-                    print("Tuning: Locked to station #", nearest_station_num,
-                          "at angle:", station_position,
-                          "Needle angle=", motor_angle,
-                          "Lock on tolerance=", lock_on_tolerance)
-                pygame.mixer.music.set_volume(volume)
+            print("Tuning: Locked to station #", nearest_station_num,
+                  "at angle:", station_position,
+                  "Needle angle=", motor_angle,
+                  "Lock on tolerance=", lock_on_tolerance)
+            select_station(nearest_station_num, False)
+            pygame.mixer.music.set_volume(volume)
             play_static(False)
             tuning_locked = True
 
     # Start playing audio with static when the needle get near a station position
     elif range_to_station < tuning_sensitivity / settings.TUNING_NEAR:
-        tuning_volume = round(volume / range_to_station, 3)
+        tuning_volume = clamp(round(volume / range_to_station, 3),settings.VOLUME_MIN,1)
         pygame.mixer.music.set_volume(tuning_volume)
 
         if active_station and active_station is not None:
             play_static(True)
             tuning_locked = False
+            #print("Tuning: Lost station lock on #",
+            #      nearest_station_num, "at angle:",station_position,
+            #      "Needle=",motor_angle,
+            #      "Range to station =", range_to_station)
         else:
-            #print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_position, "Needle=",
-            #      motor_angle, "Near tolerance =", lock_on_tolerance)
+            print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_position,
+                  "Needle=",motor_angle)
             select_station(nearest_station_num, False)
 
     # Stop any music and play just static if the needle is not near any station position
     else:
         if active_station and active_station is not None:
-            #print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_position,
-                  #"Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
+            print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_position,"Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
             if active_station:
                 active_station.stop()
             pygame.mixer.music.stop()
@@ -457,6 +443,8 @@ def tuning():
 
 def select_station(new_station_num, manual=False):
     global station_num, active_station, total_station_num, motor_angle, tuning_locked, stations
+    if new_station_num == station_num and not manual: # Do nothing if the station number doesn't change
+        return
     if new_station_num > total_station_num or new_station_num < 0:
         print("Warning: Selected an invalid station number:", new_station_num, "/", total_station_num)
     else:
@@ -465,7 +453,7 @@ def select_station(new_station_num, manual=False):
             tuning_locked = False
             set_motor(motor_angle, True)
 
-        print("Tuning: Changing to station number", new_station_num, "at angle =", motor_angle)
+        print("Select_Station: Changing to station number", new_station_num, "at angle =", motor_angle)
         active_station = stations[new_station_num]
         station_num = new_station_num
         active_station.live_playback()
@@ -522,10 +510,15 @@ def select_band(new_band_num, restore_angle = None):
             station_name = radio_station[0]
             stations.append(RadioClass(station_name, station_folder, radio_station))
 
-        led_num = round(map_range(new_band_num, 0, total_station_num, settings.GAUGE_PIXEL_QUANTITY, 0))
-        send_uart("C", "Gauge", str(led_num), 1)
-        time.sleep(0.5)  # Give the and LED time to show
-        send_uart("C", "Sweep", restore_angle)
+        if settings.SWEEP_ENABLED:
+            led_num = round(map_range(new_band_num, 0, total_station_num, settings.GAUGE_PIXEL_QUANTITY, 0))
+            send_uart("C", "Gauge", str(led_num), 1)
+            time.sleep(0.3)  # Give the and LED time to show
+            send_uart("C", "Sweep", restore_angle)
+        elif restore_angle:
+            set_motor(restore_angle, True)
+            send_uart("C", "NoSweep")
+        tuning(True)
 
 
 def prev_band():
@@ -548,7 +541,6 @@ def next_band():
     else:
         print("Tuning: Next radio band", radio_band, "/", radio_band_total)
         select_band(new_band, motor_angle)
-
 
 def wait_for_pico():
     global pico_state, heartbeat_time
@@ -668,7 +660,6 @@ def run():
                     #Motor input
                     if uart_message[0] == "M":
                         set_motor(float(uart_message[1]))
-                        tuning_locked = False
                         #print("From Pico: Motor command",float(uart_message[1]))
 
                 # Power State
@@ -783,10 +774,10 @@ class Radiostation:
             self.filename = self.files[0]
             song = self.filename
 
-            print("Info: Playing =", self.filename,
-                  "length =", str(round(self.song_lengths[0], 2)),
-                  "start_pos =", str(round(self.start_pos, 2))
-                  )
+            #print("Info: Playing =", self.filename,
+            #      "length =", str(round(self.song_lengths[0], 2)),
+            #      "start_pos =", str(round(self.start_pos, 2))
+            #      )
 
             pygame.mixer.music.load(song)
             try:
@@ -866,7 +857,7 @@ class Radiostation:
 
 
     def randomize_station(self):
-        seed = time.time()
+        seed = time.time() # Using time to shuffle the stations allows two radios to be in sync, but still randomized.
         random.Random(seed).shuffle(self.files)
         random.Random(seed).shuffle(self.song_lengths)
         print("Info: Randomized song order")
@@ -920,7 +911,8 @@ def exit_script():
     send_uart("P", False)  # Tell the Pi Pico we are going to sleep
     if setup.uart:
         setup.uart.close()  # close port
-    setup.mount.unmount(setup.device_name)
+    if setup.device_name:
+        setup.mount.unmount(setup.device_name)
     print("Action: Exiting")
 
 if __name__ == "__main__":

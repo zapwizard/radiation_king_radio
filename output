@@ -1,4 +1,4 @@
-Disk /dev/sdb: 1 MiB, 1049088 bytes, 2049 sectors
+Disk /dev/sdd: 1 MiB, 1049088 bytes, 2049 sectors
 Disk model: Pico            
 Units: sectors of 1 * 512 = 512 bytes
 Sector size (logical/physical): 512 bytes / 512 bytes
@@ -7,4 +7,4 @@ Disklabel type: dos
 Disk identifier: 0x00000000
 
 Device     Boot Start   End Sectors Size Id Type
-/dev/sdb1           1  2048    2048   1M  1 FAT12
+/dev/sdd1           1  2048    2048   1M  1 FAT12

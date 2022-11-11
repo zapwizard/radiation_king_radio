@@ -76,11 +76,10 @@ DIGITAL_VOLUME_DEAD_ZONE = 0.1
 DIGITAL_VOLUME_INCREMENT = 0.13
 
 #Buttons:
-#buttons = keypad.Keys((board.GP9,board.GP10,board.GP11,board.GP12,board.GP13),value_when_pressed=False, pull=True, interval=0.05) # Reversed order during breadboard layout
-buttons = keypad.Keys((board.GP13,board.GP12,board.GP11,board.GP10,board.GP9),value_when_pressed=False, pull=True, interval=0.05) # PCB oder
+buttons = keypad.Keys((board.GP13,board.GP12,board.GP11,board.GP10,board.GP9),value_when_pressed=False, pull=True, interval=0.05)
 BUTTON_QUANTITY = 5
 BUTTON_SHORT_PRESS = 60 # in ms
-BUTTON_LONG_PRESS = 2000 # in ms
+BUTTON_LONG_PRESS = 1500 # in ms
 BUTTON_PRESS_TIME = [None] * BUTTON_QUANTITY
 BUTTON_RELEASE_TIME = [None] * BUTTON_QUANTITY
 BUTTON_RELEASED = 0
