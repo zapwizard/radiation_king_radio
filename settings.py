@@ -17,9 +17,10 @@ ACTIONS = {
 }
 
 # GPIO.setmode(GPIO.BCM)  # Using GPIO numbering
-GPIO_ACTIONS = {
-    17: "power_off",  # GPIO 17
-}
+#GPIO_ACTIONS = {
+#    17: "power_off",  # GPIO 17
+#}
+
 DISABLE_HEARTBEAT_LED = False # Note you won't be able to determine if the code is running without using a terminal
 
 # To speed up the boot process: Song and station data caching is used
@@ -27,6 +28,7 @@ DISABLE_HEARTBEAT_LED = False # Note you won't be able to determine if the code 
 # Depending on the size of your music library caching can take a long time
 # Once the cache is re-built the radio will operate as normal
 # The RESET_CACHE settings should be set to False before your the next reboot
+# You can optionally reset the cache on any single folder by deleting the [CACHE] section in the station.ini file.
 RESET_CACHE = False
 
 # Music related
@@ -44,6 +46,7 @@ TUNING_NEAR = 4 # Adjusts how near you need to be to hear a station in the stati
 TUNING_LOCK_ON = 6  # Adjusts how precise you need to be to land on a station (Higher = more accuracy required, must be larger than tuning_near)
 BAND_CHANGE_VOLUME = 0.5 # Float: How loud the band changing sound effect is played (Multiplier of current volume)
 EFFECTS_VOLUME = 0.6 # How loud the on/off and other sound effects are played
+TIME_ZONE = 'US/Central'
 
 # Air Core Motor Related:
 MOTOR_MIN_ANGLE = 14 # This must match the numbers in pico_settings.py

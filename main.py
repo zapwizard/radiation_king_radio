@@ -13,6 +13,7 @@ import mutagen
 import pygame
 import setup
 import settings
+import datetime
 
 # Variables
 clock = pygame.time.Clock()
@@ -29,7 +30,6 @@ radio_band_total = int(0)
 active_station = None
 led_state = True
 on_off_state = False
-master_start_time = time.time()
 prev_motor_angle = 0
 motor_angle = 0
 tuning_volume = 0
@@ -44,6 +44,12 @@ heartbeat_time = 0
 pico_state = False
 pico_heartbeat_time = 0
 
+# Time related
+midnight_str = time.strftime( "%m/%d/%Y" ) + " 00:00:00"
+midnight = int( time.mktime( time.strptime( midnight_str, "%m/%d/%Y %H:%M:%S" ) ) )
+master_start_time = midnight
+print("Startup: Time:", time.strftime( "%m/%d/%Y %H:%M:%S"))
+print("Startup: Midnight:", str(datetime.timedelta(seconds=midnight)))
 
 # Sound related
 try:
@@ -76,7 +82,6 @@ pygame.mixer.Channel(4)
 snd_off = pygame.mixer.Sound(settings.SOUND_OFF)
 snd_on = pygame.mixer.Sound(settings.SOUND_ON)
 snd_band = pygame.mixer.Sound(settings.SOUND_BAND_CHANGE)
-
 
 # Static sound related
 static_sounds = {}
@@ -242,9 +247,10 @@ def handle_event(event):
 
 
 def get_radio_bands(station_folder):
+    global master_start_time
     print("Startup: Starting folder search in :", station_folder)
     if settings.RESET_CACHE:
-        print("WARNING: Caching enabled. This can take a while")
+        print("WARNING: Caching rebuilding enabled. This can take a while")
     radio_bands = []
 
     for folder in sorted(os.listdir(station_folder)):
@@ -262,44 +268,47 @@ def get_radio_bands(station_folder):
                     station_data = None
                     station_ini_parser = configparser.ConfigParser()
                     station_meta_data_file = os.path.join(path, "station.ini")
+                    station_ordered = False
+                    station_name = None
+                    station_start = None
 
                     try:
                         assert os.path.exists(station_meta_data_file)
                         station_ini_parser.read(station_meta_data_file)
                     except Exception as error:
-                        print("Warning: Could not read:", station_meta_data_file, str(error))
+                        print("Warning: Could not read file:", station_meta_data_file, str(error))
 
-                    station_ordered = False
-                    station_name = None
                     try:
-                        if station_ini_parser.has_section("metadata"):
+                        if station_ini_parser.has_option("metadata", "station_name"):
                             station_name = station_ini_parser.get('metadata', 'station_name')
-                            station_ordered = eval(station_ini_parser.get('metadata', 'ordered'))
-                            # print("Loading station:", station_name, "Ordered =", station_ordered)
                         else:
-                            print("Warning: Could not find a [metadata] section in:", station_meta_data_file)
+                            print("Warning: Could not find a [metadata] [station_name] section in:", station_meta_data_file)
                             station_name = folder
-                            station_ordered = True
                     except Exception as error:
-                        print("Error: Could not read:", station_meta_data_file, str(error))
+                        print("Error: Could not read station_name:", station_meta_data_file, str(error))
 
-                    if not settings.RESET_CACHE:
-                        try:
-                            station_data = eval(station_ini_parser.get('cache', 'station_data'))
-                            print("Info: Loaded data from", station_meta_data_file)
-                        except Exception as error:
-                            print(str(error), "Error: Could not read cache file in", station_meta_data_file)
-                        try:
-                            if not eval(str(station_data[3])):  # Randomized cached stations
-                                # Randomized based on the nearest 10 minutes to allow two radios to sync up
-                                seed = round(time.time() / 600)
-                                random.Random(seed).shuffle(station_data[2])  # station_files
-                                random.Random(seed).shuffle(station_data[4])  # station_lengths
-                                # print("randomizing", folder)
-                        except Exception as error:
-                            print(str(error), "station_data[3]=",station_data[3])
-                    else:
-                        #print("Starting Song Data Cache in ", sub_folder)
+                    try:
+                        if station_ini_parser.has_option("metadata", "ordered"):
+                            station_ordered = station_ini_parser.get('metadata', 'ordered')
+                        else:
+                            print("Warning: Could not find a [metadata] [ordered] section in:", station_meta_data_file)
+                            station_ordered = False
+                    except Exception as error:
+                        print("Error: Could not read ordered:", station_meta_data_file, str(error))
+
+                    # Load the ordered and start_time and overwrite cached data to allow for tweaking those settings
+                    try:
+                        if station_ini_parser.has_option("metadata", "start_time"):
+                            station_start= float(eval(station_ini_parser.get('metadata', 'start_time')))
+                            #print("DEBUG: Station has an start time of:",str(datetime.timedelta(seconds=station_start)))
+                        else:
+                            print("Warning: Could not find a [metadata] [start_time] section in:", station_meta_data_file)
+                            station_start = 0
+                    except Exception as error:
+                        print("Error: Could not read start_time:", station_meta_data_file, str(error))
+
+                    if settings.RESET_CACHE or not station_ini_parser.has_section("cache"):
+                        # print("Starting Song Data Cache in ", sub_folder)
                         station_files = []  # File paths
                         station_lengths = []  # Song lengths
 
@@ -321,7 +330,9 @@ def get_radio_bands(station_folder):
                             # print("randomizing", folder)
 
                         if not station_data:
-                            station_data = station_name, folder, station_files, station_ordered, station_lengths, total_length
+                            station_data = [station_name, folder, station_files, station_ordered, station_lengths,
+                                            total_length, station_start]
+                            station_data = list(station_data)
 
                             try:
                                 station_ini_parser.read(station_meta_data_file, encoding=None)
@@ -346,8 +357,30 @@ def get_radio_bands(station_folder):
                                 station_ini_file.close()
                             except Exception as error:
                                 print("Error: Failed to save cache to", station_meta_data_file, "/", str(error))
+                    else:
+                        try:
+                            station_data = list(eval(station_ini_parser.get('cache', 'station_data')))
+                            station_data[3] = station_ordered
+                            station_data[6] = station_start
+                            print("Info: Loaded data from", station_meta_data_file, "Ordered=",station_data[3],"start_time=",station_data[6])
+                        except Exception as error:
+                            print(str(error), "Error: Could not read cache file in", station_meta_data_file)
+
+                        try:
+                            if not eval(str(station_data[3])):  # Randomized cached stations
+                                # Randomized based on the nearest 10 minutes to allow two radios to sync up
+                                seed = round(time.time() / 600)
+                                random.Random(seed).shuffle(station_data[2])  # station_files
+                                random.Random(seed).shuffle(station_data[4])  # station_lengths
+                                # print("randomizing", folder)
+                        except Exception as error:
+                            print(str(error), "station_data[3]=",station_data[3])
+
+                    # print("Loading station:", station_name, "Ordered =", station_ordered, station_start)
+
                     if len(station_data) > 0:
                         sub_radio_bands.append(station_data)
+
         if sub_radio_bands:
             radio_bands.append(sub_radio_bands)
     return radio_bands
@@ -393,18 +426,18 @@ def tuning(manual=False):
     #    return
 
     nearest_station_num = get_nearest_station(motor_angle) # Find the nearest radio station to the needle position
-    station_position = get_station_pos(nearest_station_num)  # Get the exact angle of that station
-    range_to_station = abs(station_position - motor_angle)  # Find the angular distance to nearest station
+    station_angle = get_station_pos(nearest_station_num)  # Get the exact angle of that station
+    range_to_station = abs(station_angle - motor_angle)  # Find the angular distance to nearest station
     lock_on_tolerance = round(tuning_sensitivity / settings.TUNING_LOCK_ON, 1)
 
     # Play at volume with no static when needle is close to station position
     if range_to_station <= lock_on_tolerance:
         if not tuning_locked:
             tuning_volume = volume
-            print("Tuning: Locked to station #", nearest_station_num,
-                  "at angle:", station_position,
-                  "Needle angle=", motor_angle,
-                  "Lock on tolerance=", lock_on_tolerance)
+            #print("Tuning: Locked to station #", nearest_station_num,
+            #      "at angle:", station_angle,
+            #      "Needle angle=", motor_angle,
+            #      "Lock on tolerance=", lock_on_tolerance)
             select_station(nearest_station_num, False)
             pygame.mixer.music.set_volume(volume)
             play_static(False)
@@ -419,18 +452,18 @@ def tuning(manual=False):
             play_static(True)
             tuning_locked = False
             #print("Tuning: Lost station lock on #",
-            #      nearest_station_num, "at angle:",station_position,
+            #      nearest_station_num, "at angle:",station_angle,
             #      "Needle=",motor_angle,
             #      "Range to station =", range_to_station)
         else:
-            print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_position,
-                  "Needle=",motor_angle)
+            #print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_angle,
+            #      "Needle=",motor_angle)
             select_station(nearest_station_num, False)
 
     # Stop any music and play just static if the needle is not near any station position
     else:
         if active_station and active_station is not None:
-            print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_position,"Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
+            #print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_angle,"Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
             if active_station:
                 active_station.stop()
             pygame.mixer.music.stop()
@@ -453,10 +486,11 @@ def select_station(new_station_num, manual=False):
             tuning_locked = False
             set_motor(motor_angle, True)
 
-        print("Select_Station: Changing to station number", new_station_num, "at angle =", motor_angle)
         active_station = stations[new_station_num]
         station_num = new_station_num
+        print("Select_Station: Changing to station", new_station_num, active_station.label, ", Offset:",active_station.station_offset)
         active_station.live_playback()
+        print("Station Position:",str(datetime.timedelta(seconds=active_station.position)))
 
 
 def prev_station():
@@ -621,81 +655,82 @@ def run():
     wait_for_pico() # Wait for the pi pico heartbeat
 
     print("****** Radiation King Radio is now running ******")
+    try:
+        while True:
+            now = time.time()
 
-    while True:
-        now = time.time()
+            if now - pico_heartbeat_time > settings.PICO_HEARTBEAT_TIMEOUT:
+                standby()
+                wait_for_pico()
+                pico_heartbeat_time = now
 
-        if now - pico_heartbeat_time > settings.PICO_HEARTBEAT_TIMEOUT:
-            standby()
-            wait_for_pico()
-            pico_heartbeat_time = now
+            for event in pygame.event.get():
+                handle_event(event)
+            try:
+                uart_message = receive_uart()
+                if uart_message and len(uart_message) > 1:
+                    #print("From UART:", uart_message)
+                    # Information output
+                    if uart_message[0] == "I" and on_off_state:
+                        print("Pico serial:", uart_message, end="\n")
 
-        for event in pygame.event.get():
-            handle_event(event)
-        try:
-            uart_message = receive_uart()
-            if uart_message and len(uart_message) > 1:
-                #print("From UART:", uart_message)
-                # Information output
-                if uart_message[0] == "I" and on_off_state:
-                    print("Pico serial:", uart_message, end="\n")
+                    if uart_message[0] == "H" and uart_message[1] == "Pico":
+                        pico_heartbeat_time = now
+                        pico_state = True
+                        #print("UART: Pi Pico heartbeat received")
 
-                if uart_message[0] == "H" and uart_message[1] == "Pico":
-                    pico_heartbeat_time = now
-                    pico_state = True
-                    #print("UART: Pi Pico heartbeat received")
+                    #Button Input
+                    if on_off_state:
+                        if uart_message[0] == "B":
+                            if uart_message[1] == "1":  # Button released
+                                process_button_press(uart_message)
+                            if uart_message[1] == "2":  # Button held
+                                process_button_hold(uart_message)
 
-                #Button Input
-                if on_off_state:
-                    if uart_message[0] == "B":
-                        if uart_message[1] == "1":  # Button released
-                            process_button_press(uart_message)
-                        if uart_message[1] == "2":  # Button held
-                            process_button_hold(uart_message)
+                        #Volume Input
+                        if uart_message[0] == "V":
+                            set_volume_level(float(uart_message[1]))
 
-                    #Volume Input
-                    if uart_message[0] == "V":
-                        set_volume_level(float(uart_message[1]))
+                        #Motor input
+                        if uart_message[0] == "M":
+                            set_motor(float(uart_message[1]))
+                            #print("From Pico: Motor command",float(uart_message[1]))
 
-                    #Motor input
-                    if uart_message[0] == "M":
-                        set_motor(float(uart_message[1]))
-                        #print("From Pico: Motor command",float(uart_message[1]))
+                    # Power State
+                    if uart_message[0] == "P":
+                        if uart_message[1] == "1":
+                            print("UART Info: Pi Pico called resume")
+                            if on_off_state:
+                                send_uart("P","On")
+                            else:
+                                resume_from_standby()
+                        if uart_message[1] == "0":
+                            print("UART Info: Pi Pico called Standby")
+                            standby()
+                        if uart_message[1] == "2":
+                            print("UART Info: Pi Pico called code exit")
+                            sys.exit()
+                        if uart_message[1] == "3":
+                            print("UART Info: Pi Pico called Pi Zero Shutdown")
+                            shutdown_zero()
 
-                # Power State
-                if uart_message[0] == "P":
-                    if uart_message[1] == "1":
-                        print("UART Info: Pi Pico called resume")
-                        if on_off_state:
-                            send_uart("P","On")
-                        else:
-                            resume_from_standby()
-                    if uart_message[1] == "0":
-                        print("UART Info: Pi Pico called Standby")
-                        standby()
-                    if uart_message[1] == "2":
-                        print("UART Info: Pi Pico called code exit")
-                        sys.exit()
-                    if uart_message[1] == "3":
-                        print("UART Info: Pi Pico called Pi Zero Shutdown")
-                        shutdown_zero()
+            except Exception as error:
+                   print("UART Error:", str(error))
+            if setup.gpio_available:
+                check_gpio_input()
+            if on_off_state:
+                tuning()
 
-        except Exception as error:
-               print("UART Error:", str(error))
-        if setup.gpio_available:
-            check_gpio_input()
-        if on_off_state:
-            tuning()
+            if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
+                send_uart("H", "Zero")
+                heartbeat_time = now
 
-        if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
-            send_uart("H", "Zero")
-            heartbeat_time = now
-
-        clock.tick(200)
-
+            clock.tick(200)
+    except KeyboardInterrupt:
+        sys.exit()
 
 def process_button_press(uart_message):
-    print("UART: Held button", uart_message[2])
+    print("UART: Released button", uart_message[2])
     if uart_message[2] == "0" and active_station: active_station.rewind()
     if uart_message[2] == "1": prev_station()
     if uart_message[2] == "2" and active_station:
@@ -705,7 +740,7 @@ def process_button_press(uart_message):
 
 
 def process_button_hold(uart_message):
-    print("UART: Released button", uart_message[2])
+    print("UART: Held button", uart_message[2])
     if uart_message[2] == "0" and active_station: active_station.prev_song()
     if uart_message[2] == "1": prev_band()
     if uart_message[2] == "2" and active_station:
@@ -735,53 +770,48 @@ class Radiostation:
         self.station_length = 0
         self.filename = 0
         self.last_filename = None
-        self.start_time = master_start_time
+        self.reference_time = 0
+        self.position = 0 # Variable with the current position in seconds of the station
         self.sum_of_song_lengths = 0
-        self.start_pos = 0
+        self.station_angle = 0
         self.last_play_position = 0
         self.last_playtime = 0
+        self.station_offset = 0
         pygame.mixer.music.set_endevent(settings.EVENTS['SONG_END'])
-
 
     def live_playback(self):
         global volume
-        #self.start_pos = 0
         if self.files:
-            self.start_pos = max(time.time() - self.start_time, 0)
-            # print("Time based start_pos =", round(self.start_pos, 3))
+
+            #Update position based on time that has passed
+            self.position = time.time() - self.reference_time
 
             #  Subtract time until we are below the station length
-            if self.station_length and self.start_pos > self.station_length:
-                print("Info: start_pos longer than station length", round(self.start_pos, 3), self.station_length)
-                while self.start_pos > self.station_length:
+            if self.station_length and self.position > self.station_length:
+                print("Info: position:",round(self.position, 3),"longer than station length:",round(self.song_length, 3))
+                while self.position > self.station_length:
                     print("Info: Looping station list")
-                    self.start_pos = self.start_pos - self.station_length
+                    self.position = self.position - self.station_length
 
             #  Find where in the station list we should be base on start position
             self.song_length = self.song_lengths[0]  # length of the current song
-            if self.song_length and self.start_pos > self.song_length:
-                print("Info: Start_pos longer than song length, skipping songs", round(self.start_pos, 3), round(self.song_length, 3))
+            if self.song_length and self.position > self.song_length:
+                print("Info: Position:",round(self.position, 3),"is longer than the song length:",round(self.song_length, 3),"skipping ahead")
 
                 #  Skip ahead until we reach the correct time
-                while self.start_pos > self.song_length:
-                    # print("Skipping song", self.song_length)
+                while self.position > self.song_length:
                     self.files.rotate(-1)
                     self.song_lengths.rotate(-1)
-                    self.start_pos = self.start_pos - self.song_length
+                    self.position = self.position - self.song_length
                     self.song_length = self.song_lengths[0]
-                self.start_time = time.time() - self.start_pos
+                self.reference_time = time.time() - self.position
 
             self.filename = self.files[0]
             song = self.filename
 
-            #print("Info: Playing =", self.filename,
-            #      "length =", str(round(self.song_lengths[0], 2)),
-            #      "start_pos =", str(round(self.start_pos, 2))
-            #      )
-
             pygame.mixer.music.load(song)
             try:
-                pygame.mixer.music.play(0, self.start_pos)
+                pygame.mixer.music.play(0, self.position)
             except:
                 pygame.mixer.music.play(0, 0)
             pygame.mixer.music.set_volume(volume)
@@ -829,18 +859,18 @@ class Radiostation:
         global volume
         self.files.rotate(-1)
         self.song_lengths.rotate(-1)
-        self.start_time = time.time()
-        self.start_pos = 0
+        self.reference_time = time.time()
+        self.position = 0
         self.filename = self.files[0]
         song = self.filename
 
         print("Info: Playing next song =", self.filename,
               "length =", str(round(self.song_lengths[0], 2)),
-              "start_pos =", str(round(self.start_pos, 2))
+              "position =", str(round(self.position, 2))
               )
         pygame.mixer.music.load(song)
         try:
-            pygame.mixer.music.play(0, self.start_pos)
+            pygame.mixer.music.play(0, self.position)
         except:
             pygame.mixer.music.play(0, 0)
         pygame.mixer.music.set_volume(volume)
@@ -850,11 +880,10 @@ class Radiostation:
     def prev_song(self):
         self.files.rotate(1)
         self.song_lengths.rotate(1)
-        self.start_time = time.time()
-        self.start_pos = 0
+        self.reference_time = time.time()
+        self.position = 0
         self.live_playback()
         print("Action: Prev song")
-
 
     def randomize_station(self):
         seed = time.time() # Using time to shuffle the stations allows two radios to be in sync, but still randomized.
@@ -865,21 +894,22 @@ class Radiostation:
 
     def fast_forward(self):
         global master_start_time
-        self.start_time = self.start_time - settings.FAST_FORWARD_INCREMENT
-        if self.start_time < master_start_time:
-            master_start_time = self.start_time
-        print("Action: Fast forward", settings.FAST_FORWARD_INCREMENT, self.start_time, master_start_time)
+        self.reference_time = self.reference_time - settings.FAST_FORWARD_INCREMENT
+        if self.reference_time < master_start_time:
+            master_start_time = self.position
+        print("Action: Fast forward", settings.FAST_FORWARD_INCREMENT, self.reference_time, master_start_time)
         self.live_playback()
 
 
     def rewind(self):
         global master_start_time
-        self.start_time = max(self.start_time + settings.REWIND_INCREMENT, master_start_time)
-        print("Action: Rewind", settings.FAST_FORWARD_INCREMENT, self.start_time, master_start_time)
+        self.reference_time = max(self.reference_time + settings.REWIND_INCREMENT, master_start_time)
+        print("Action: Rewind", settings.REWIND_INCREMENT, self.reference_time, master_start_time)
         self.live_playback()
 
 class RadioClass(Radiostation):
     def __init__(self, station_name, station_folder, station_data, *args, **kwargs):
+        global master_start_time
         # self.station_data = [folder, station_name, station_files, station_ordered, station_lengths]
         super(RadioClass, self).__init__(self, *args, **kwargs)
         self.label = station_name
@@ -887,7 +917,8 @@ class RadioClass(Radiostation):
         self.files = deque(station_data[2])
         self.song_lengths = deque(station_data[4])
         self.total_length = station_data[5]
-
+        self.station_offset = station_data[6]
+        self.reference_time = master_start_time + self.station_offset
 
 def save_settings():
     global volume, radio_band, station_num
@@ -912,7 +943,7 @@ def exit_script():
     if setup.uart:
         setup.uart.close()  # close port
     if setup.device_name:
-        setup.mount.unmount(setup.device_name)
+        setup.mount.unmount(setup.mount.get_media_path(settings.PICO_FOLDER_NAME))
     print("Action: Exiting")
 
 if __name__ == "__main__":
