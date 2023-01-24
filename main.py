@@ -52,8 +52,6 @@ midnight = int( time.mktime( time.strptime( midnight_str, "%m/%d/%Y %H:%M:%S" ) 
 master_start_time = midnight
 print("Startup: Time:", time.strftime( "%m/%d/%Y %H:%M:%S"))
 print("Startup: Midnight:", str(datetime.timedelta(seconds=midnight)))
-midnight = None
-
 
 
 # Sound related
@@ -651,13 +649,14 @@ def receive_uart():
 
 
 def midnight():
-    global midnight, master_start_time
+    global midnight, master_start_time, stations
     midnight_str = time.strftime("%m/%d/%Y") + " 00:00:00"
     midnight = int(time.mktime(time.strptime(midnight_str, "%m/%d/%Y %H:%M:%S")))
     master_start_time = midnight
 
-    for station in radio_band_list:
-        station.reference_time = master_start_time + station.radio_band_list.station_offset
+    for station in stations:
+        station.reference_time = master_start_time + station.station_offset
+    print("INFO: Midnight:", str(datetime.timedelta(seconds=midnight)))
 
 schedule.every().day.at("00:00:01").do(midnight)
 
