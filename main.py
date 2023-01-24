@@ -14,6 +14,7 @@ import pygame
 import setup
 import settings
 import datetime
+import schedule
 
 # Variables
 clock = pygame.time.Clock()
@@ -44,12 +45,16 @@ heartbeat_time = 0
 pico_state = False
 pico_heartbeat_time = 0
 
+
 # Time related
 midnight_str = time.strftime( "%m/%d/%Y" ) + " 00:00:00"
 midnight = int( time.mktime( time.strptime( midnight_str, "%m/%d/%Y %H:%M:%S" ) ) )
 master_start_time = midnight
 print("Startup: Time:", time.strftime( "%m/%d/%Y %H:%M:%S"))
 print("Startup: Midnight:", str(datetime.timedelta(seconds=midnight)))
+midnight = None
+
+
 
 # Sound related
 try:
@@ -645,6 +650,17 @@ def receive_uart():
         print("UART Error:",error)
 
 
+def midnight():
+    global midnight, master_start_time
+    midnight_str = time.strftime("%m/%d/%Y") + " 00:00:00"
+    midnight = int(time.mktime(time.strptime(midnight_str, "%m/%d/%Y %H:%M:%S")))
+    master_start_time = midnight
+
+    for station in radio_band_list:
+        station.reference_time = master_start_time + station.radio_band_list.station_offset
+
+schedule.every().day.at("00:00:01").do(midnight)
+
 def run():
     global clock, on_off_state, snd_on, on_off_state, tuning_locked
     global motor_angle, radio_band_total, radio_band_list, heartbeat_time, pico_heartbeat_time, pico_state
@@ -658,6 +674,8 @@ def run():
     try:
         while True:
             now = time.time()
+
+            schedule.run_pending()
 
             if now - pico_heartbeat_time > settings.PICO_HEARTBEAT_TIMEOUT:
                 standby()
