@@ -61,11 +61,10 @@ This is useful for making a station out of real world broadcast recording such a
 This is an offset applied to allow for virtual real-time syncing.
 
 Example:
-	[metadata]
-	station_name = The Shadow
-	ordered = True
-    start_time = 0
-E
+	[settings]
+	station_ordered = True
+	station_start = 0
+
 #Software setup:
 ## Requirements:
 Make sure and install all the requirements listed in requirements.txt on your Pi Zero.
@@ -90,7 +89,7 @@ The "pico_settings.py" file has options you may want to tweak related to the but
   - `cd /home/pi/radking`
   - `sudo /usr/bin/python -u /home/pi/radking/main.py &`
 
-Note that this method runs the script anytime any console connects, be careful to stop the script on one console before running another.
+Note that this method runs the script anytime any console connects, be careful to stop the script on one console before running another. CTRL+C can be used to quit the code
 
 # Operation:
 ## How the "Live" playback works:
