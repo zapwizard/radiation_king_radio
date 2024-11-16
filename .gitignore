@@ -11,3 +11,14 @@ pi_pico_files/.fseventsd/no_log
 pi_pico_files/code - Copy.py
 sounds/Static_master.aup
 *.au
+radio/00_music/
+radio/01_old_world_radio/
+radio/02_Fallout_Mods/
+radio/03_Fallout_Mods_2/
+radio/04_Full_Broadcasts/
+radio/05_Jazz_Blues/
+radio/06_Real_World_Radio/
+radio/98_Civil_Defence/
+radio/99_Ambient/Andromeda Radio/
+radio/99_Holiday_Songs/
+radio/99_Ambient/

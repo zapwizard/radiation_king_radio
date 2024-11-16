@@ -9,12 +9,42 @@ import random
 import sys
 import time
 from collections import deque
-import mutagen
+from collections import defaultdict
 import pygame
 import setup
 import settings
 import datetime
 import schedule
+import ast
+import json
+import subprocess
+import concurrent.futures
+import signal
+import mutagen
+import serial
+from copy import deepcopy
+from subprocess import call
+import re
+
+
+
+#Logging
+import logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+logger.debug("Debug message")
+logger.info("Informational message")
+logger.error("Error message")
+
+# Custom signal handler for SIGINT
+def signal_handler(sig, frame):
+    print("CTRL + C pressed. Exiting gracefully...")
+    exit_script()  # Call cleanup function
+    sys.exit(0)  # Exit the script
+    
+# Register the signal handler
+signal.signal(signal.SIGINT, signal_handler)
 
 # Variables
 clock = pygame.time.Clock()
@@ -34,7 +64,7 @@ on_off_state = False
 prev_motor_angle = 0
 motor_angle = 0
 tuning_volume = 0
-tuning_sensitivity = 5
+tuning_seperation = 5
 tuning_locked = False
 tuning_prev_angle = None
 ADC_0_Prev_Values = []
@@ -65,14 +95,32 @@ try:
 except Exception as e:
     sys.exit("Error: Sound setup failed" + str(e))
 
+#defualt structure:
+def get_default_station_data(path='', sub_folder_name='', band_name=''):
+    return {
+        "path": path,
+        "station_name": sub_folder_name,
+        "folder_name": band_name,
+        "station_files": [],
+        "station_ordered": False,
+        "station_lengths": [],
+        "total_length": 0,
+        "station_start": 0
+    }
+
+
+def extract_number(filename):
+    # Extract numbers from filename using regex
+    match = re.search(r'\d+', os.path.basename(filename))
+    return int(match.group()) if match else float('inf')
+
 print("Startup: Starting pygame initialization")
 os.environ["SDL_VIDEODRIVER"] = "dummy"  # Make a fake screen
 os.environ['SDL_AUDIODRIVER'] = 'alsa'
 pygame.display.set_mode((1, 1))
 pygame.init()
 
-# Reserve a sound channel for static sounds
-print("Startup: Loading static sounds (Ignore the underrun errors)")
+# Reserve a channels
 pygame.mixer.set_reserved(1)
 pygame.mixer.set_reserved(2)
 pygame.mixer.set_reserved(3)
@@ -85,14 +133,20 @@ pygame.mixer.Channel(4)
 snd_off = pygame.mixer.Sound(settings.SOUND_OFF)
 snd_on = pygame.mixer.Sound(settings.SOUND_ON)
 snd_band = pygame.mixer.Sound(settings.SOUND_BAND_CHANGE)
+snd_error = pygame.mixer.Sound(settings.SOUND_ERROR)
+
 
 # Static sound related
+print("Startup: Loading static sounds (Ignore the underrun errors)")
 static_sounds = {}
 i = 0
-for file in sorted(os.listdir(settings.STATIC_SOUNDS_FOLDER)):
-    if file.endswith(".ogg"):
-        static_sounds[i] = pygame.mixer.Sound("./" + settings.STATIC_SOUNDS_FOLDER + "/" + file)
+
+# Iterate through the sorted files in the directory
+for file in sorted(os.scandir(settings.STATIC_SOUNDS_FOLDER), key=lambda entry: entry.name):
+    if file.name.endswith(".ogg"):  # Use file.name to access the filename
+        static_sounds[i] = pygame.mixer.Sound(os.path.join("./", settings.STATIC_SOUNDS_FOLDER, file.name))
         i += 1
+
 print("Info: Loaded", len(static_sounds), "static sound files")
 
 
@@ -115,24 +169,26 @@ def load_saved_settings():
     try:
         saved_volume = float(saved_ini.get('audio', 'volume'))
         print("Info: Loaded saved volume:", saved_volume)
-    except Exception as error:
-        saved_volume = 0.05
-        print("Warning: Could not read volume setting in", str(error))
-
-    try:
-        saved_station_num = int(saved_ini.get('audio', 'station'))
-        print("Info: Loaded saved station:", saved_station_num)
-    except Exception as error:
-        saved_station_num = 0
-        print("Warning: Could not read station setting in", str(error))
+    except (Exception, ValueError) as error:
+        saved_volume = 0.05  # Default volume
+        print(f"Warning: Could not read volume setting: {error}")
 
     try:
         saved_band_num = int(saved_ini.get('audio', 'band'))
         print("Info: Loaded saved band:", saved_band_num)
-    except Exception as error:
-        saved_band_num = 0
-        print("Warning: Could not read radio band setting in", str(error))
+    except (Exception, ValueError) as error:
+        saved_band_num = 0  # Default band
+        print(f"Warning: Could not read radio band setting: {error}")
+
+    try:
+        saved_station_num = int(saved_ini.get('audio', 'station'))
+        print("Info: Loaded saved station:", saved_station_num)
+    except (Exception, ValueError) as error:
+        saved_station_num = 0  # Default station
+        print(f"Warning: Could not read station setting: {error}")
+
     return saved_volume, saved_station_num, saved_band_num
+
 
 
 def map_range(x, in_min, in_max, out_min, out_max):
@@ -188,7 +244,7 @@ def standby():
     if on_off_state:
         on_off_state = False
         print("Info: Going into standby")
-        send_uart("P", False)  # Tell the Pi Pico we are going to sleep
+        send_uart("P", "0")  # Tell the Pi Pico we are going to sleep
         if active_station:
             active_station.stop()
         pygame.mixer.Channel(2).set_volume(settings.EFFECTS_VOLUME)
@@ -198,7 +254,7 @@ def standby():
 
 
 def resume_from_standby():
-    global on_off_state, motor_angle,  motor_angle_prev, volume_prev, snd_on
+    global on_off_state, motor_angle,  motor_angle_prev, volume_prev, snd_on, station_num
     if not on_off_state:
         print("Info: Resume from standby")
         pygame.time.set_timer(settings.EVENTS['BLINK'], 1000)
@@ -208,15 +264,12 @@ def resume_from_standby():
         pygame.mixer.Channel(2).set_volume(settings.EFFECTS_VOLUME)
         pygame.mixer.Channel(2).play(snd_on)
 
-        play_static(True)
-
         volume_settings, station_number, radio_band_number = load_saved_settings()
         set_volume_level(volume_settings)
         print("Tuning: Loading saved station number", station_number)
-        play_static(False)
         select_band(radio_band_number, get_station_pos(station_number))
-        if not settings.SWEEP_ENABLED:
-            send_uart("C", "NoSweep")
+        station_num = get_nearest_station(motor_angle)
+        select_station(station_num, True)
 
 
 def handle_action(action):
@@ -249,158 +302,211 @@ def handle_event(event):
         print("Event:", event)
 
 
-def get_radio_bands(station_folder):
+def get_audio_length_mutagen(file_path):
+    try:
+        audio = mutagen.File(file_path)
+        if audio is not None and hasattr(audio.info, 'length'):
+            length = audio.info.length
+            print(f"CACHE: {file_path}, Length: {length}")
+            return length
+        else:
+            raise ValueError(f"Mutagen could not read duration of {file_path}")
+    except Exception as e:
+        print(f"ERROR: While getting duration of {file_path} with mutagen: {e}")
+        return 0
+
+def get_radio_bands(radio_folder):
     global master_start_time
-    print("Startup: Starting folder search in :", station_folder)
+    print("Startup: Starting folder search in:", radio_folder)
+
     if settings.RESET_CACHE:
-        print("WARNING: Caching rebuilding enabled. This can take a while")
+        print("WARNING: Cache rebuilding enabled. This can take a while!")
+
     radio_bands = []
 
-    for folder in sorted(os.listdir(station_folder)):
-        sub_radio_bands = []
-        if os.path.isdir(station_folder + folder):
-            # print("Starting radio band search in :", station_folder + folder)
-            for sub_folder in sorted(os.listdir(station_folder + folder)):  # Search root audio folders for sub-folders
-                path = os.path.join(station_folder, folder, sub_folder)
-                if os.path.isdir(path):
-                    # print("Starting song search in folder:", path)
-                    if len(glob.glob(path + "/*.ogg")) == 0:
-                        print("Warning: No .ogg files in:", sub_folder)
-                        continue
+    for folder in sorted(os.scandir(radio_folder), key=lambda f: f.name.lower()):
+        if folder.is_dir():
+            print("Debug: Found band folder:", folder.name)
+            sub_radio_bands = []
 
-                    station_data = None
-                    station_ini_parser = configparser.ConfigParser()
-                    station_meta_data_file = os.path.join(path, "station.ini")
-                    station_ordered = False
-                    station_name = None
-                    station_start = None
-
-                    try:
-                        assert os.path.exists(station_meta_data_file)
-                        station_ini_parser.read(station_meta_data_file)
-                    except Exception as error:
-                        print("Warning: Could not read file:", station_meta_data_file, str(error))
-
-                    try:
-                        if station_ini_parser.has_option("metadata", "station_name"):
-                            station_name = station_ini_parser.get('metadata', 'station_name')
-                        else:
-                            print("Warning: Could not find a [metadata] [station_name] section in:", station_meta_data_file)
-                            station_name = folder
-                    except Exception as error:
-                        print("Error: Could not read station_name:", station_meta_data_file, str(error))
-
-                    try:
-                        if station_ini_parser.has_option("metadata", "ordered"):
-                            station_ordered = station_ini_parser.get('metadata', 'ordered')
-                        else:
-                            print("Warning: Could not find a [metadata] [ordered] section in:", station_meta_data_file)
-                            station_ordered = False
-                    except Exception as error:
-                        print("Error: Could not read ordered:", station_meta_data_file, str(error))
-
-                    # Load the ordered and start_time and overwrite cached data to allow for tweaking those settings
-                    try:
-                        if station_ini_parser.has_option("metadata", "start_time"):
-                            station_start= float(eval(station_ini_parser.get('metadata', 'start_time')))
-                            #print("DEBUG: Station has an start time of:",str(datetime.timedelta(seconds=station_start)))
-                        else:
-                            print("Warning: Could not find a [metadata] [start_time] section in:", station_meta_data_file)
-                            station_start = 0
-                    except Exception as error:
-                        print("Error: Could not read start_time:", station_meta_data_file, str(error))
-
-                    if settings.RESET_CACHE or not station_ini_parser.has_section("cache"):
-                        # print("Starting Song Data Cache in ", sub_folder)
-                        station_files = []  # File paths
-                        station_lengths = []  # Song lengths
-
-                        for song_file in sorted(os.listdir(path)):
-                            if song_file.endswith(".ogg"):
-                                station_files.append(os.path.join(path, song_file))
-                                file_path = os.path.join(path, song_file)
-                                try:
-                                    station_lengths.append(mutagen.File(file_path).info.length)
-                                except Exception as error:
-                                    print("Mutagen error:", str(error), "in file", song_file)
-                        total_length = sum(station_lengths)
-
-                        if not station_ordered:
-                            # Randomized based on the nearest 10 minutes to allow two radios to sync up
-                            seed = round(time.time() / 600)
-                            random.Random(seed).shuffle(station_files)
-                            random.Random(seed).shuffle(station_lengths)
-                            # print("randomizing", folder)
-
-                        if not station_data:
-                            station_data = [station_name, folder, station_files, station_ordered, station_lengths,
-                                            total_length, station_start]
-                            station_data = list(station_data)
-
-                            try:
-                                station_ini_parser.read(station_meta_data_file, encoding=None)
-                                if not station_ini_parser.has_section("cache"):
-                                    station_ini_parser.add_section("cache")
-                                    print("Info: Adding the Cache section to", station_meta_data_file)
-                                # else:
-                                # print("There is already a cache section in", station_meta_data_file)
-                            except Exception as error:
-                                print(str(error), "in", station_meta_data_file)
-
-                            station_ini_file = None
-                            try:
-                                station_ini_file = open(station_meta_data_file, 'w')
-                            except Exception as error:
-                                print("Warning: Failed to open cache file", station_meta_data_file, "|", str(error))
-
-                            try:
-                                station_ini_parser.set("cache", "station_data", str(station_data))
-                                station_ini_parser.write(station_ini_file)
-                                print("Info: Saved Cache to %s, station %s" % (station_meta_data_file, station_name))
-                                station_ini_file.close()
-                            except Exception as error:
-                                print("Error: Failed to save cache to", station_meta_data_file, "/", str(error))
-                    else:
-                        try:
-                            station_data = list(eval(station_ini_parser.get('cache', 'station_data')))
-                            station_data[3] = station_ordered
-                            station_data[6] = station_start
-                            print("Info: Loaded data from", station_meta_data_file, "Ordered=",station_data[3],"start_time=",station_data[6])
-                        except Exception as error:
-                            print(str(error), "Error: Could not read cache file in", station_meta_data_file)
-
-                        try:
-                            if not eval(str(station_data[3])):  # Randomized cached stations
-                                # Randomized based on the nearest 10 minutes to allow two radios to sync up
-                                seed = round(time.time() / 600)
-                                random.Random(seed).shuffle(station_data[2])  # station_files
-                                random.Random(seed).shuffle(station_data[4])  # station_lengths
-                                # print("randomizing", folder)
-                        except Exception as error:
-                            print(str(error), "station_data[3]=",station_data[3])
-
-                    # print("Loading station:", station_name, "Ordered =", station_ordered, station_start)
-
-                    if len(station_data) > 0:
+            for sub_folder in sorted(os.scandir(folder.path), key=lambda f: f.name.lower()):
+                if sub_folder.is_dir() and has_valid_ogg_files(sub_folder.path):
+                    station_data = handle_station_folder(sub_folder, folder.name)
+                    if station_data:
                         sub_radio_bands.append(station_data)
 
-        if sub_radio_bands:
-            radio_bands.append(sub_radio_bands)
+            if sub_radio_bands:
+                # Append a tuple or a dictionary to ensure the entire structure is preserved
+                radio_bands.append({
+                    "folder_name": folder.name,
+                    "stations": sub_radio_bands
+                })
+    
+    if not radio_bands:
+        print("Warning: No valid radio bands found. Returning an empty list.")
+    
     return radio_bands
+
+
+
+                
+                
+def has_valid_ogg_files(path):
+    return any(file.name.endswith('.ogg') for file in os.scandir(path))
+
+
+def handle_station_folder(sub_folder, band_name):
+    path = sub_folder.path
+    station_ini_file = os.path.join(path, "station.ini")
+    rebuild_needed = settings.RESET_CACHE or not os.path.exists(station_ini_file)
+    station_data = {}
+
+    if not rebuild_needed:
+        try:
+            # Check if the station.ini file is blank
+            if os.path.getsize(station_ini_file) == 0:
+                print(f"Warning: station.ini file for {sub_folder.name} is blank. Rebuilding cache.")
+                rebuild_needed = True
+            else:
+                # Read the station.ini file
+                station_ini_parser = configparser.ConfigParser()
+                station_ini_parser.read(station_ini_file)
+                if station_ini_parser.has_section('cache'):
+                    # Read the station_data as a JSON string and convert it to a dictionary
+                    station_data_str = station_ini_parser.get('cache', 'station_data')
+
+                    # Parse the JSON string into a dictionary
+                    station_data = json.loads(station_data_str)
+
+                    # Ensure JSON booleans are converted to Python booleans
+                    station_data['station_ordered'] = bool(station_data.get('station_ordered', False))
+
+                    # Validate the loaded station data
+                    if validate_station_data(station_data):
+                        # Check if the number of .ogg files matches the cached list
+                        current_station_files = sorted(glob.glob(os.path.join(path, "*.ogg")), key=extract_number)
+                        if len(current_station_files) != len(station_data.get("station_files", [])):
+                            print(f"Warning: Number of audio files in {sub_folder.name} has changed. Rebuilding cache.")
+                            rebuild_needed = True
+                        else:
+                            print(f"CACHE: Loaded cached data successfully for {sub_folder.name}")
+                            return station_data
+                    else:
+                        print(f"Warning: Invalid station data found in cache for {sub_folder.name}, rebuilding cache.")
+                        rebuild_needed = True
+                else:
+                    print(f"Warning: No 'cache' section found in station.ini for {sub_folder.name}, rebuilding cache.")
+                    rebuild_needed = True
+
+        except json.JSONDecodeError as json_error:
+            print(f"Error: JSON decoding failed for {sub_folder.name} with error: {json_error}")
+            rebuild_needed = True
+        except Exception as error:
+            print(f"Error accessing cache for {sub_folder.name}: {error}")
+            rebuild_needed = True
+
+    # If rebuild is needed, rebuild the cache
+    if rebuild_needed:
+        station_data = rebuild_station_cache(path, sub_folder.name, band_name)
+        if not validate_station_data(station_data):
+            print(f"ERROR: Failed to rebuild cache for {sub_folder.name}. Returning default station data.")
+            station_data = get_default_station_data(path, sub_folder.name, band_name)
+
+    return station_data
+
+
+
+
+def validate_station_data(data):
+    return data.get("station_files") and isinstance(data["station_files"], list) and data["station_files"]
+    
+def rebuild_station_cache(path, sub_folder_name, band_name):
+    print(f"INFO: Starting Data Cache Rebuild for {sub_folder_name}")
+    station_ini_file = os.path.join(path, "station.ini")
+    station_files = sorted(glob.glob(os.path.join(path, "*.ogg")), key=extract_number)
+    
+    if not station_files:
+        print(f"Warning: No audio files found in {sub_folder_name}. Skipping station.")
+        return get_default_station_data(path, sub_folder_name, band_name)
+
+    # Get audio lengths in parallel
+    station_lengths = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_file = {executor.submit(get_audio_length_mutagen, file_path): file_path for file_path in station_files}
+        for future in concurrent.futures.as_completed(future_to_file):
+            file_path = future_to_file[future]
+            try:
+                length = future.result()
+                if length > 0:
+                    station_lengths.append(length)
+                else:
+                    print(f"Warning: Invalid length for {file_path}.")
+            except Exception as e:
+                print(f"Failed to get length for {file_path}: {str(e)}")
+
+    if not station_lengths:
+        print(f"Warning: Could not determine lengths for any files in {sub_folder_name}. Skipping station.")
+        return get_default_station_data(path, sub_folder_name, band_name)
+
+    total_length = sum(station_lengths)
+
+    # Read existing settings if available
+    station_ini_parser = configparser.ConfigParser()
+    station_data = get_default_station_data(path, sub_folder_name, band_name)
+
+    if os.path.exists(station_ini_file):
+        try:
+            station_ini_parser.read(station_ini_file)
+            if station_ini_parser.has_section("settings"):
+                # Preserve existing settings
+                station_ordered = station_ini_parser.getboolean("settings", "station_ordered", fallback=station_data["station_ordered"])
+                station_start = station_ini_parser.getint("settings", "station_start", fallback=station_data["station_start"])
+
+                # Update station_data with settings from the file
+                station_data["station_ordered"] = station_ordered
+                station_data["station_start"] = station_start
+        except Exception as e:
+            print(f"Error reading settings from station.ini for {sub_folder_name}: {str(e)}")
+
+    # Update station_data with new values
+    station_data.update({
+        "station_files": station_files,
+        "station_lengths": station_lengths,
+        "total_length": total_length,
+    })
+
+    # Save updated station data and settings back to the ini file
+    station_ini_parser["settings"] = {
+        "station_ordered": str(station_data["station_ordered"]),
+        "station_start": str(station_data["station_start"]),
+    }
+    station_ini_parser["cache"] = {
+        "station_data": json.dumps(station_data, indent=4)
+    }
+
+    try:
+        with open(station_ini_file, 'w') as configfile:
+            station_ini_parser.write(configfile)
+        print(f"Info: Cache for {sub_folder_name} rebuilt and saved successfully.")
+    except Exception as e:
+        print(f"Error: Failed to save cache for {sub_folder_name}: {str(e)}")
+
+    return station_data
+
+
 
 
 # Find the angular location of a radio station
 def get_station_pos(station_number):
-    global total_station_num, tuning_sensitivity
-    return round(map_range(station_number,0,total_station_num - 1,settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),),1,)
+    global total_station_num
+    return round(map_range(station_number,0,total_station_num - 1,settings.MOTOR_MIN_ANGLE + (settings.END_ZONE),settings.MOTOR_MAX_ANGLE - (settings.END_ZONE),),1,)
 
 
 # Determine the nearest radio station to a certain motor angle
 def get_nearest_station(angle):
-    global tuning_sensitivity, total_station_num
-    nearest_station = round(map_range(angle,settings.MOTOR_MIN_ANGLE + (tuning_sensitivity),settings.MOTOR_MAX_ANGLE - (tuning_sensitivity),0,total_station_num - 1,))
-    if nearest_station >= total_station_num:
-        nearest_station = total_station_num - 1
+    global tuning_seperation, total_station_num
+    nearest_station = round(map_range(angle,settings.MOTOR_MIN_ANGLE + (settings.END_ZONE),settings.MOTOR_MAX_ANGLE - (settings.END_ZONE),0,total_station_num - 1,))
+    #print("DEBUG: get_nearest_station, nearest_station=",nearest_station)
     return nearest_station
 
 
@@ -422,42 +528,40 @@ def play_static(play):
 
 # Tune into a station based on the motor angle
 def tuning(manual=False):
-    global motor_angle, volume, static_sounds, tuning_locked, tuning_prev_angle
-    global active_station, tuning_volume, tuning_sensitivity, station_num
+    global motor_angle, tuning_locked, tuning_prev_angle, station_num, active_station
 
-    #if motor_angle == tuning_prev_angle and not manual: # Do nothing if the angle is unchanged
-    #    return
+    if motor_angle == tuning_prev_angle and not manual: # Do nothing if the angle is unchanged
+        return
 
     nearest_station_num = get_nearest_station(motor_angle) # Find the nearest radio station to the needle position
-    station_angle = get_station_pos(nearest_station_num)  # Get the exact angle of that station
+    station_angle = get_station_pos(nearest_station_num)  # Get the exact angle of the nearest station
     range_to_station = abs(station_angle - motor_angle)  # Find the angular distance to nearest station
-    lock_on_tolerance = round(tuning_sensitivity / settings.TUNING_LOCK_ON, 1)
 
     # Play at volume with no static when needle is close to station position
-    if range_to_station <= lock_on_tolerance:
+    if range_to_station <= settings.TUNING_LOCK_ON:
         if not tuning_locked:
             tuning_volume = volume
-            #print("Tuning: Locked to station #", nearest_station_num,
-            #      "at angle:", station_angle,
-            #      "Needle angle=", motor_angle,
-            #      "Lock on tolerance=", lock_on_tolerance)
+            # print("DEBUG: Tuning: Locked to station #", nearest_station_num,
+                  # "at angle:", station_angle,
+                  # "Needle angle=", motor_angle,
+                  # "Lock on tolerance=", settings.TUNING_LOCK_ON)
             select_station(nearest_station_num, False)
             pygame.mixer.music.set_volume(volume)
             play_static(False)
             tuning_locked = True
 
     # Start playing audio with static when the needle get near a station position
-    elif range_to_station < tuning_sensitivity / settings.TUNING_NEAR:
+    elif range_to_station < settings.TUNING_NEAR:
         tuning_volume = clamp(round(volume / range_to_station, 3),settings.VOLUME_MIN,1)
         pygame.mixer.music.set_volume(tuning_volume)
 
         if active_station and active_station is not None:
             play_static(True)
             tuning_locked = False
-            #print("Tuning: Lost station lock on #",
-            #      nearest_station_num, "at angle:",station_angle,
-            #      "Needle=",motor_angle,
-            #      "Range to station =", range_to_station)
+            # print("DEBUG: Tuning: Lost station lock on #",
+                  # nearest_station_num, "at angle:",station_angle,
+                  # "Needle=",motor_angle,
+                  # "Range to station =", round(range_to_station,1))
         else:
             #print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_angle,
             #      "Needle=",motor_angle)
@@ -466,96 +570,189 @@ def tuning(manual=False):
     # Stop any music and play just static if the needle is not near any station position
     else:
         if active_station and active_station is not None:
-            #print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_angle,"Needle=", motor_angle, "tuning_sensitivity =", tuning_sensitivity)
+            #print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_angle,"Needle=", motor_angle, "tuning_seperation =", tuning_seperation)
             if active_station:
                 active_station.stop()
             pygame.mixer.music.stop()
             active_station = None
             station_num = None
             tuning_locked = False
-        play_static(True)
+            play_static(True)
     tuning_prev_angle = motor_angle
+    
 
+def next_station():
+    global station_num, total_station_num
 
-def select_station(new_station_num, manual=False):
-    global station_num, active_station, total_station_num, motor_angle, tuning_locked, stations
-    if new_station_num == station_num and not manual: # Do nothing if the station number doesn't change
-        return
-    if new_station_num > total_station_num or new_station_num < 0:
-        print("Warning: Selected an invalid station number:", new_station_num, "/", total_station_num)
+    station_num = get_nearest_station(motor_angle) + 1
+    if station_num >= total_station_num:
+        station_num = total_station_num - 1  # Ensure station_num does not exceed valid index range
+        print(f"TUNING: At the end of the station list {station_num} / {total_station_num}")
+        next_band()
     else:
-        if manual:
-            motor_angle = get_station_pos(new_station_num)
-            tuning_locked = False
-            set_motor(motor_angle, True)
-
-        active_station = stations[new_station_num]
-        station_num = new_station_num
-        print("Select_Station: Changing to station", new_station_num, active_station.label, ", Offset:",active_station.station_offset)
-        active_station.live_playback()
-        print("Station Position:",str(datetime.timedelta(seconds=active_station.position)))
-
+        print(f"TUNING: Next station {station_num} / {total_station_num}")
+    select_station(station_num, True)
 
 def prev_station():
-    global station_num, total_station_num, motor_angle
+    global station_num, total_station_num
+
     station_num = get_nearest_station(motor_angle) - 1
     if station_num < 0:
         station_num = 0
-        print("Tuning: At the beginning of the station list", station_num, "/", total_station_num)
+        print(f"Tuning: At the beginning of the station list {station_num} / {total_station_num}")
         prev_band()
     else:
-        print("Tuning: Previous station", station_num, "/", total_station_num)
+        print(f"Tuning: Previous station {station_num} / {total_station_num}")
     select_station(station_num, True)
+
+
+def select_band(new_band_num, restore_angle=None):
+    global radio_band, total_station_num, tuning_seperation
+    global radio_band_total, station_list, stations, tuning_locked
+    global active_station, volume, snd_band
+
+    print(f"select_band: DEBUG: select_band called with new_band_num={new_band_num}, type={type(new_band_num)}")
+
+    if not isinstance(new_band_num, int):
+        print("select_band: ERROR: new_band_num must be an integer.")
+        return
+
+    if new_band_num >= radio_band_total or new_band_num < 0:
+        print("select_band: ERROR: Selected an invalid band number:", new_band_num, "/", radio_band_total)
+        return
+
+    if active_station:
+        active_station.stop()
+        active_station = None
+
+    radio_band = new_band_num
+    print("select_band: Changing to band number", new_band_num)
+
+    try:
+        band_data = radio_band_list[new_band_num]  # Expecting a dictionary now
+        if not isinstance(band_data, dict):
+            raise TypeError(f"band_data is not a dictionary. Type: {type(band_data)}")
+
+        folder_name = band_data.get("folder_name")
+        folder_path = os.path.join(settings.STATIONS_ROOT_FOLDER, folder_name)
+        
+
+    except IndexError:
+        print(f"select_band: IndexError: new_band_num {new_band_num} is out of the range of the radio_band_list.")
+    except Exception as e:
+        print("select_band: Unexpected error accessing radio_band_list:", str(e))
+
+
+    # Audible Band callout
+    band_callout_path = os.path.join(folder_path, "callout.ogg")  # Example file name
+    if os.path.exists(band_callout_path):
+        band_callout_sound = pygame.mixer.Sound(band_callout_path)
+        channel = pygame.mixer.Channel(3)
+        channel.play(band_callout_sound)
+        channel.set_volume(volume * settings.BAND_CALLOUT_VOLUME)
+    else:
+        print(f"select_band: ERROR: Band callout file does not exist at {band_callout_path}")
+
+    # Play band change sound
+    pygame.mixer.Channel(4).play(snd_band)
+    pygame.mixer.Channel(4).set_volume(volume * settings.BAND_CHANGE_VOLUME)
+
+    # Set the station list based on the updated structure
+    station_data_list = band_data.get("stations", [])
+    
+    # Set the total number of stations
+    total_station_num = len(station_data_list)
+    tuning_seperation = round(settings.MOTOR_RANGE / total_station_num, 1)
+    print("Info: Tuning angle separation =", tuning_seperation, "Number of stations:", total_station_num)
+
+    # Initialize the stations list with RadioClass instances
+    stations = []
+    for station_data in station_data_list:
+        if isinstance(station_data, dict):
+            try:
+                station = RadioClass(station_data)
+                stations.append(station)
+                #print(f"select_band: DEBUG: Added station '{station.label}'")
+            except Exception as e:
+                print(f"select_band: ERROR: Failed to initialize RadioClass for station: {station_data.get('station_name', 'Unknown')}, error: {str(e)}")
+        else:
+            print(f"select_band: ERROR: Expected station data to be a dictionary, got {type(station_data)} instead")
+    sweep(restore_angle)
+
+    print(f"select_band: Total stations loaded: {total_station_num}")
+
+
+
+
+def select_station(new_station_num, manual=False):
+    global station_num, active_station, motor_angle, tuning_locked, stations, total_station_num
+
+    # Validate the station list
+    if not stations:
+        print("Warning: No stations available to select.")
+        return
+
+    # Check if the new station number is valid
+    if new_station_num < 0 or new_station_num >= len(stations):
+        print("Warning: Selected an invalid station number:", new_station_num, "/", len(stations) - 1)
+        return
+
+    # If the station number hasn't changed and it's not a manual tune, do nothing
+    if new_station_num == station_num and not manual:
+        return
+
+    # Set motor angle if manually tuning
+    if manual:
+        motor_angle = get_station_pos(new_station_num)
+        tuning_locked = False
+        set_motor(motor_angle, True)
+
+    # Change to the new station
+    station_num = new_station_num
+    active_station = stations[station_num]
+
+    # Get the station label
+    station_name = active_station.label if hasattr(active_station, 'label') else 'Unknown'
+
+    # Log the change
+    print(f"Select_Station: '{station_name}' (Station {station_num + 1} of {total_station_num}), at angle = {motor_angle}")
+
+    # Start playback for the active station
+    active_station.live_playback()
+
+
+def prev_station():
+    global station_num, motor_angle, total_station_num
+
+    # Get the nearest station to the current motor angle and move to the previous one
+    station_num = get_nearest_station(motor_angle) - 1
+
+    if station_num < 0:
+        station_num = 0
+        print(f"Tuning: At the beginning of the station list {station_num} / {total_station_num}")
+        play_error_snd()
+        prev_band()
+    else:
+        print(f"Tuning: Previous station {station_num} / {total_station_num}")
+        select_station(station_num, True)
 
 
 def next_station():
-    global station_num, total_station_num, motor_angle
+    global station_num, motor_angle, total_station_num
+
+    # Get the nearest station to the current motor angle and move to the next one
     station_num = get_nearest_station(motor_angle) + 1
-    if station_num > total_station_num - 1:
-        station_num = total_station_num - 1
-        print("Tuning: At end of the station list", station_num, "/", total_station_num)
+
+    if station_num >= len(stations):
+        station_num = len(stations) - 1
+        print(f"Tuning: At the end of the station list {station_num} / {total_station_num}")
+        play_error_snd()
         next_band()
     else:
-        print("Tuning: Next station", station_num, "/", total_station_num)
-    select_station(station_num, True)
+        print(f"Tuning: Next station {station_num} / {total_station_num}")
+        select_station(station_num, True)
 
 
-def select_band(new_band_num, restore_angle = None):
-    global radio_band_list, radio_band, total_station_num, tuning_sensitivity, radio_band_total, station_list
-    global stations, tuning_locked, active_station, volume, snd_band
-
-    if new_band_num > radio_band_total or new_band_num < 0:
-        print("Tuning: Selected an invalid band number:", new_band_num, "/", radio_band_total)
-    else:
-        if active_station:
-            active_station.stop()
-            active_station = None
-        print("Tuning: Changing to band number", new_band_num)
-        radio_band = new_band_num
-
-        pygame.mixer.Channel(4).play(snd_band)
-        pygame.mixer.Channel(4).set_volume(volume / settings.BAND_CHANGE_VOLUME)
-
-        station_list = radio_band_list[new_band_num]
-        total_station_num = len(station_list)
-        tuning_sensitivity = round(settings.MOTOR_RANGE / total_station_num, 1)
-        print("Info: Tuning angle separation =", tuning_sensitivity, "Number of stations:", total_station_num)
-
-        stations = []
-        for radio_station in station_list:
-            station_folder = radio_station[1] + "/"
-            station_name = radio_station[0]
-            stations.append(RadioClass(station_name, station_folder, radio_station))
-
-        if settings.SWEEP_ENABLED:
-            led_num = round(map_range(new_band_num, 0, total_station_num, settings.GAUGE_PIXEL_QUANTITY, 0))
-            send_uart("C", "Gauge", str(led_num), 1)
-            time.sleep(0.3)  # Give the and LED time to show
-            send_uart("C", "Sweep", restore_angle)
-        elif restore_angle:
-            set_motor(restore_angle, True)
-            send_uart("C", "NoSweep")
-        tuning(True)
 
 
 def prev_band():
@@ -564,6 +761,7 @@ def prev_band():
     if new_band < 0:
         radio_band = 0
         print("Tuning: At the beginning of the band list", radio_band, "/", radio_band_total)
+        play_error_snd()
     else:
         print("Tuning: Previous radio band", radio_band, "/", radio_band_total)
         select_band(new_band, motor_angle)
@@ -572,80 +770,104 @@ def prev_band():
 def next_band():
     global radio_band, radio_band_total, motor_angle
     new_band = radio_band + 1
-    if new_band > radio_band_total:
-        radio_band = radio_band_total
+    if new_band >= radio_band_total:
+        radio_band = radio_band_total -1
         print("Tuning: At end of the band list", radio_band, "/", radio_band_total)
+        play_error_snd()
     else:
         print("Tuning: Next radio band", radio_band, "/", radio_band_total)
         select_band(new_band, motor_angle)
 
-def wait_for_pico():
+def wait_for_pico(uart_message):
     global pico_state, heartbeat_time
-    print("Waiting: Waiting for Pi Pico heartbeat")
-    while not pico_state:
-        if setup.gpio_available:
-            check_gpio_input()
-        now = time.time()
-        if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
-            send_uart("H", "Zero")
-            print("Waiting: Sending Heartbeat to Pico")
-            blink_led()
-            heartbeat_time = now
-            uart_message = receive_uart()
-        if uart_message:
-            #print("UART:", uart_message)
-            try:
-                if uart_message[0] == "H":
-                    if len(uart_message) > 1 and uart_message[1] and uart_message[1] == "Pico":
-                        pico_state = True
-                        print("UART: Pi Pico heartbeat received")
-                if uart_message[0] == "P":
-                    if uart_message[1] == "2":
-                        print("UART Info: Pi Pico called code exit")
-                        sys.exit()
-                    if uart_message[1] == "3":
-                        print("UART Info: Pi Pico called Pi Zero Shutdown")
-                        shutdown_zero()
 
+    # Process the UART message if provided
+    if uart_message:
+        if isinstance(uart_message, list) and len(uart_message) > 1:
+            try:
+                process_uart_message(uart_message)
             except Exception as error:
-                print("ERROR: UART:", error)
+                print("wait_for_pico: ERROR: Error in processing UART message:", str(error))
+                setup.uart.close()  # Attempt to close and reset UART connection
+                time.sleep(2)  # Delay before retrying
+        else:
+            print("wait_for_pico: DEBUG: Invalid UART message structure:", uart_message)
+
+    # Send heartbeat if interval elapsed and we have not received a valid message
+    now = time.time()
+    if not pico_state and now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
+        send_uart("H", "Zero")
+        print("wait_for_pico: Waiting: Sending Heartbeat to Pico")
+        blink_led()
+        heartbeat_time = now
+
+
+def play_error_snd():
+    pygame.mixer.Channel(4).play(snd_error)
+    pygame.mixer.Channel(4).set_volume(volume * settings.SOUND_ERROR_VOLUME)
+
+
 
 def shutdown_zero():
     print("Info: Doing a full shutdown")
-    from subprocess import call
     call("sudo nohup shutdown -h now", shell=True)
 
-def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
+def send_uart(command_type, data1, data2="", data3="", data4=""):
+    #print(f"DEBUG: send_uart called with command_type={command_type}, data1={data1}, data2={data2}, data3={data3}, data4={data4}")
+    # Debug each argument to see if they are of valid types
+    if not all(isinstance(arg, (str, bytes, os.PathLike, bool, int, float)) for arg in [data1, data2, data3, data4]):
+        print("ERROR: One of the data arguments is an unsupported type. Arguments must be str, bytes, os.PathLike, bool, int, or float.")
+        raise TypeError("Invalid type passed to send_uart")
+    # Convert booleans if necessary
+    data1 = "1" if data1 is True else ("0" if data1 is False else str(data1))
+    data2 = "1" if data2 is True else ("0" if data2 is False else str(data2))
+    data3 = "1" if data3 is True else ("0" if data3 is False else str(data3))
+    data4 = "1" if data4 is True else ("0" if data4 is False else str(data4))
+    # Proceed to write the UART message
     if setup.uart:
-        if not setup.uart.is_open:
-            print("ERROR: UART is not open")
-            return
         try:
-            #print("Message:","<",command_type,",",data1,",",data2,",",data3,",",data4,",>")  # Debug (Slow)
-            setup.uart.write(bytes(f"{command_type},{data1},{data2},{data3},{data4},\n","utf-8"))
+            message = f"{command_type},{data1},{data2},{data3},{data4},\n"
+            setup.uart.write(bytes(message, "utf-8"))
         except Exception as error:
             _, err, _ = sys.exc_info()
-            print("ERROR: UART: (%s)" % err, error)
-
+            print("ERROR: UART Output: (%s)" % err, error)
 
 def receive_uart():
     if not setup.uart:
-        return
+        return []
     if not setup.uart.is_open:
         try:
             setup.uart.open()
         except Exception as error:
-            print("UART Open Error:", error)
-        return
+            print(f"receive_uart: UART Open Error: {error} - Device might be disconnected or multiple access on port.")
+            return []
+
+    if setup.uart.in_waiting == 0:
+        # If there's nothing waiting, don't try to read.
+        return []
+
     try:
-        line = setup.uart.readline() # Read data until "\n" or timeout
+        line = setup.uart.readline()  # Read data until "\n" or timeout
+        setup.uart.flush()
         if line:
-            line = line.decode("utf-8") # Convert from bytes to string
-            line = line.strip("\n") # Strip end line
-            return "".join(line).split(",")
+            line = line.decode("utf-8").strip("\n")  # Convert from bytes to string and strip new line
+            parsed_data = line.split(",")
+            return parsed_data
+        else:
+            return []
+    except serial.SerialException as error:
+        print(f"receive_uart: ERROR: UART Input Error: No data received from UART. - {error} - Device might be disconnected or multiple access on port.")
+        setup.uart.close()  # Close the port on error
     except Exception as error:
-        setup.uart.close()  # close port
-        print("UART Error:",error)
+        print(f"receive_uart: ERROR: UART Input Error: {error}")
+        setup.uart.close()  # Close the port on generic error
+
+    return []
+
+
+
+
+
 
 
 def midnight():
@@ -660,111 +882,221 @@ def midnight():
 
 schedule.every().day.at("00:00:01").do(midnight)
 
+def process_uart_message(uart_message):
+    global pico_heartbeat_time, pico_state
+
+    if not isinstance(uart_message, list) or not all(isinstance(item, str) for item in uart_message) or len(uart_message) <= 1:
+        print("DEBUG: Invalid UART message structure:", uart_message)
+        return  # Early exit if the message is not as expected
+
+    # Direct processing based on the message type
+    message_type = uart_message[0]
+
+    if message_type == "I":
+        handle_info_message(uart_message)
+    elif message_type == "H":
+        # Handle heartbeat message
+        if uart_message[1] == "Pico":
+            pico_heartbeat_time = time.time()
+            pico_state = True
+            #print("UART: Pi Pico heartbeat received")
+    elif message_type == "B" and on_off_state:
+        handle_button_message(uart_message)
+    elif message_type == "V" and on_off_state:
+        handle_volume_message(uart_message)
+    elif message_type == "M" and on_off_state:
+        handle_motor_message(uart_message)
+    elif message_type == "P":
+        handle_power_message(uart_message)
+
+
+def handle_info_message(uart_message):
+    if on_off_state:
+        print("Pico serial:", uart_message)
+
+def handle_heartbeat_message(uart_message):
+    global pico_heartbeat_time, pico_state
+    if uart_message[1] == "Pico":
+        pico_heartbeat_time = time.time()
+        pico_state = True
+
+def handle_button_message(uart_message):
+    try:
+        if len(uart_message) < 3:
+            print("ERROR: Missing button ID in UART message:", uart_message)
+            return
+
+        button_id = uart_message[2]
+        action_type = "press" if uart_message[1] == "1" else "hold"
+
+        # Handle the button action based on press or hold
+        process_button_action(button_id, action_type=action_type)
+
+    except IndexError as error:
+        print("Button Handling Error:", str(error))
+
+
+def handle_volume_message(uart_message):
+    try:
+        volume_level = float(uart_message[1])
+        set_volume_level(volume_level)
+    except (IndexError, ValueError) as error:
+        print("Volume Error:", str(error))
+
+def handle_motor_message(uart_message):
+    try:
+        motor_angle = float(uart_message[1])
+        set_motor(motor_angle)
+        #print("DEBUG: handle_motor_message, motor_angle=",motor_angle)
+    except (IndexError, ValueError) as error:
+        print("Motor Error:", str(error))
+
+def handle_power_message(uart_message):
+    if len(uart_message) > 1:
+        action = uart_message[1]
+        if action == "1":
+            print("Info: Pi Pico called resume")
+            resume_from_standby() if not on_off_state else send_uart("P", "On")
+        elif action == "0":
+            print("Info: Pi Pico called Standby")
+            standby()
+        elif action == "2":
+            print("Info: Pi Pico called code exit")
+            exit_script()
+            sys.exit(0)
+        elif action == "3":
+            print("Info: Pi Pico called Pi Zero Shutdown")
+            shutdown_zero()
+
+
+def sweep(restore_angle):
+    if settings.SWEEP_ENABLED:
+        print("sweep, DEBUG: Sweep triggered")
+        send_uart("C", "Sweep", restore_angle)
+    elif restore_angle:
+        print("sweep, DEBUG: Sweep Skipped")
+        set_motor(restore_angle, True)
+        send_uart("C", "NoSweep")
+
+
 def run():
-    global clock, on_off_state, snd_on, on_off_state, tuning_locked
+    global clock, on_off_state, snd_on, tuning_locked, restore_angle
     global motor_angle, radio_band_total, radio_band_list, heartbeat_time, pico_heartbeat_time, pico_state
 
-    radio_band_list = get_radio_bands(settings.STATIONS_ROOT_FOLDER)
-    radio_band_total = len(radio_band_list) - 1
+    # Initial heartbeat loop until we get a successful response from Pi Pico
+    print("Waiting: Waiting for Pi Pico heartbeat")
+    while not pico_state:
+        # Check GPIO input if available
+        if setup.gpio_available:
+            check_gpio_input()
 
-    wait_for_pico() # Wait for the pi pico heartbeat
+        # Receive UART message once per loop iteration
+        uart_message = receive_uart()
+
+        # Pass the UART message to wait_for_pico
+        wait_for_pico(uart_message)
+
+    # Step 1: Cache all radio bands and stations
+    radio_band_list = get_radio_bands(settings.STATIONS_ROOT_FOLDER)
+    if not radio_band_list:
+        print("ERROR: No radio bands found. Please check the folder structure and files.")
+        sys.exit(1)
+
+    # Now that bands are loaded, print how many were found
+    print(f"Debug: Loaded radio bands - Total: {len(radio_band_list)}")
+
+    # Set the total number of bands found
+    radio_band_total = len(radio_band_list)
+
+    # Step 2: Load saved settings, now that we have cached all bands and stations
+    volume_settings, station_number, radio_band_number = load_saved_settings()
+
+    # Step 3: Initialize the volume and select the saved band and station
+    set_volume_level(volume_settings)
+    print("Tuning: Loading saved station number", station_number)
+
+    # After loading settings, attempt to select the saved band and station if valid
+    if radio_band_number < radio_band_total and radio_band_number >= 0:
+        select_band(radio_band_number, get_station_pos(station_number))
+    else:
+        print(f"Warning: Saved band number {radio_band_number} is invalid. Defaulting to band 0.")
+        select_band(0, get_station_pos(0))
 
     print("****** Radiation King Radio is now running ******")
     try:
         while True:
             now = time.time()
 
+            # Run any pending scheduled jobs
             schedule.run_pending()
 
+            # Receive UART message
+            uart_message = receive_uart()
+
+            # Check if the Pi Pico is still sending heartbeats
             if now - pico_heartbeat_time > settings.PICO_HEARTBEAT_TIMEOUT:
                 standby()
-                wait_for_pico()
+                wait_for_pico(uart_message)
                 pico_heartbeat_time = now
 
+            # Process received UART message during normal operation
+            if uart_message:
+                try:
+                    process_uart_message(uart_message)
+                except Exception as error:
+                    print("ERROR: Error in processing UART message:", str(error))
+
+            # Handle pygame events
             for event in pygame.event.get():
                 handle_event(event)
-            try:
-                uart_message = receive_uart()
-                if uart_message and len(uart_message) > 1:
-                    #print("From UART:", uart_message)
-                    # Information output
-                    if uart_message[0] == "I" and on_off_state:
-                        print("Pico serial:", uart_message, end="\n")
 
-                    if uart_message[0] == "H" and uart_message[1] == "Pico":
-                        pico_heartbeat_time = now
-                        pico_state = True
-                        #print("UART: Pi Pico heartbeat received")
-
-                    #Button Input
-                    if on_off_state:
-                        if uart_message[0] == "B":
-                            if uart_message[1] == "1":  # Button released
-                                process_button_press(uart_message)
-                            if uart_message[1] == "2":  # Button held
-                                process_button_hold(uart_message)
-
-                        #Volume Input
-                        if uart_message[0] == "V":
-                            set_volume_level(float(uart_message[1]))
-
-                        #Motor input
-                        if uart_message[0] == "M":
-                            set_motor(float(uart_message[1]))
-                            #print("From Pico: Motor command",float(uart_message[1]))
-
-                    # Power State
-                    if uart_message[0] == "P":
-                        if uart_message[1] == "1":
-                            print("UART Info: Pi Pico called resume")
-                            if on_off_state:
-                                send_uart("P","On")
-                            else:
-                                resume_from_standby()
-                        if uart_message[1] == "0":
-                            print("UART Info: Pi Pico called Standby")
-                            standby()
-                        if uart_message[1] == "2":
-                            print("UART Info: Pi Pico called code exit")
-                            sys.exit()
-                        if uart_message[1] == "3":
-                            print("UART Info: Pi Pico called Pi Zero Shutdown")
-                            shutdown_zero()
-
-            except Exception as error:
-                   print("UART Error:", str(error))
+            # GPIO and tuning logic
             if setup.gpio_available:
                 check_gpio_input()
+                
+            # Radio tuning
             if on_off_state:
                 tuning()
 
+            # Send heartbeat to Pico if necessary
             if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
                 send_uart("H", "Zero")
                 heartbeat_time = now
 
             clock.tick(200)
     except KeyboardInterrupt:
-        sys.exit()
-
-def process_button_press(uart_message):
-    print("UART: Released button", uart_message[2])
-    if uart_message[2] == "0" and active_station: active_station.rewind()
-    if uart_message[2] == "1": prev_station()
-    if uart_message[2] == "2" and active_station:
-        active_station.play_pause()
-    if uart_message[2] == "3": next_station()
-    if uart_message[2] == "4" and active_station: active_station.fast_forward()
+        print("KeyboardInterrupt received, exiting...")
+        exit_script()  # Call cleanup function
+        sys.exit(0)  # Ensure the script exits
 
 
-def process_button_hold(uart_message):
-    print("UART: Held button", uart_message[2])
-    if uart_message[2] == "0" and active_station: active_station.prev_song()
-    if uart_message[2] == "1": prev_band()
-    if uart_message[2] == "2" and active_station:
-        active_station.randomize_station()
-        active_station.next_song()
-    if uart_message[2] == "3": next_band()
-    if uart_message[2] == "4" and active_station: active_station.next_song()
+
+def process_button_action(button_id, action_type="press"):
+    """Handle both press and hold actions for buttons."""
+    if not isinstance(button_id, str):
+        print(f"ERROR: Button identifier should be a string, but got {type(button_id)}")
+        return
+
+    if action_type == "press":
+        if button_id == "0" and active_station: active_station.rewind()
+        if button_id == "1": prev_station()
+        if button_id == "2":
+            if active_station: active_station.play_pause()
+            else: play_static(False)
+        if button_id == "3": next_station()
+        if button_id == "4" and active_station: active_station.fast_forward()
+    elif action_type == "hold":
+        if button_id == "0" and active_station: active_station.prev_song()
+        if button_id == "1": prev_band()
+        if button_id == "2" and active_station:
+            active_station.toggle_order()  # Toggle between ordered and random
+            active_station.next_song()  # Go to the next song after toggling
+        if button_id == "3": next_band()
+        if button_id == "4" and active_station: active_station.next_song()
+    else:
+        print(f"ERROR: Unknown action type {action_type} for button {button_id}")
+
+
 
 
 class Radiostation:
@@ -906,8 +1238,25 @@ class Radiostation:
         seed = time.time() # Using time to shuffle the stations allows two radios to be in sync, but still randomized.
         random.Random(seed).shuffle(self.files)
         random.Random(seed).shuffle(self.song_lengths)
+        self.is_ordered = False  # Set mode to random
         print("Info: Randomized song order")
 
+    def order_station(self):
+        # Order by extracting numbers from filenames for sorting.
+        ordered_files = sorted(list(self.files), key=extract_number)
+        ordered_lengths = sorted(list(self.song_lengths), key=lambda _: extract_number(self.files[0]))
+        self.files = deque(ordered_files)
+        self.song_lengths = deque(ordered_lengths)
+        self.is_ordered = True  # Set mode to ordered
+        print("Info: Ordered song list")
+        
+    def toggle_order(self):
+        if self.is_ordered:
+            self.randomize_station()
+        else:
+            self.order_station()
+
+        print(f"Info: Toggled order mode. is_ordered={self.is_ordered}")
 
     def fast_forward(self):
         global master_start_time
@@ -925,17 +1274,37 @@ class Radiostation:
         self.live_playback()
 
 class RadioClass(Radiostation):
-    def __init__(self, station_name, station_folder, station_data, *args, **kwargs):
+    def __init__(self, station_data, *args, **kwargs):
         global master_start_time
-        # self.station_data = [folder, station_name, station_files, station_ordered, station_lengths]
-        super(RadioClass, self).__init__(self, *args, **kwargs)
-        self.label = station_name
-        self.directory = station_folder
-        self.files = deque(station_data[2])
-        self.song_lengths = deque(station_data[4])
-        self.total_length = station_data[5]
-        self.station_offset = station_data[6]
-        self.reference_time = master_start_time + self.station_offset
+
+        try:
+            super(RadioClass, self).__init__(*args, **kwargs)
+
+            if not isinstance(station_data, dict):
+                print("station_data=", station_data)
+                raise TypeError(f"Expected station_data to be a dictionary, got {type(station_data)} instead")
+
+            self.path = station_data.get('path', '')
+            self.label = station_data.get('station_name', 'Unknown')
+            self.directory = station_data.get('folder_name', 'Unknown')
+            self.files = deque(station_data.get('station_files', []))
+            self.ordered = station_data.get('station_ordered', False)
+            self.song_lengths = deque(station_data.get('station_lengths', []))
+            self.total_length = station_data.get('total_length', 0)
+            self.station_offset = station_data.get('station_start', 0)
+            self.reference_time = master_start_time + self.station_offset
+
+            # Initialize is_ordered correctly based on station_ordered
+            self.is_ordered = self.ordered
+
+            print(f"Debug: Successfully initialized RadioClass for {self.label}")
+
+        except KeyError as e:
+            print(f"Error: Missing expected key in station_data: {e}")
+        except Exception as e:
+            print(f"Error: Exception during RadioClass initialization: {str(e)}")
+
+
 
 def save_settings():
     global volume, radio_band, station_num
@@ -950,18 +1319,34 @@ def save_settings():
         saved_ini.write(configfile)
     print("Info: Saved settings: volume: %s, station %s, band %s" % (volume, station_num, radio_band))
 
-@atexit.register
-def exit_script():
+def shutdown_sequence():
     save_settings()
     pygame.mixer.quit()
     pygame.time.set_timer(settings.EVENTS['BLINK'], 0)
-    send_uart("I","Pi Zero Shutdown")
-    send_uart("P", False)  # Tell the Pi Pico we are going to sleep
+    send_uart("I", "Pi Zero Shutdown")
+    send_uart("P", "0")  # Tell the Pi Pico we are going to sleep
     if setup.uart:
-        setup.uart.close()  # close port
-    if setup.device_name:
+        setup.uart.close()  # Close port
+    if hasattr(setup, 'device_name') and setup.device_name:
         setup.mount.unmount(setup.mount.get_media_path(settings.PICO_FOLDER_NAME))
     print("Action: Exiting")
+
+# Register atexit to ensure clean-up on normal exit
+@atexit.register
+def exit_script():
+    shutdown_sequence()
+
+# Custom signal handler for SIGINT
+def signal_handler(sig, frame):
+    print("CTRL + C pressed. Exiting gracefully...")
+    shutdown_sequence()
+    sys.exit(0)
+
+# Register the signal handler
+signal.signal(signal.SIGINT, signal_handler)
+
+
+
 
 if __name__ == "__main__":
     run()

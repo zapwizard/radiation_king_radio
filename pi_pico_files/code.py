@@ -54,14 +54,14 @@ def receive_uart():
                 uart_line = uart_line.strip("\n")  # Strip end line
                 return "".join(uart_line).split(",")  # Split into array of commands
     except Exception as e:
-        print("ERROR: Uart:", e)
+        print("ERROR: Uart error Pico receive_uart:", e)
 
 def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
     try:
         usb_cdc.data.write(bytes(f"{command_type},{data1},{data2},{data3},{data4},\n", "utf-8")) #if using USB serial
     except Exception as e:
         _, err, _ = sys.exc_info()
-        print("ERROR: Uart:", e)
+        print("ERROR: Uart error Pico send_uart:", e)
 
     # To debug the Pico on the Pi Zero run: minicom -b 115200 -o -D /dev/ttyACM0
     #Comment this method out for local USB print debugging
@@ -159,24 +159,24 @@ def get_button_states():
     time_ticks = supervisor.ticks_ms()
     for button_num, press_time in enumerate(settings.BUTTON_PRESS_TIME):
         if press_time and time_ticks > press_time + settings.BUTTON_LONG_PRESS:
-            print("DEBUG: Button", button_num, "held for", settings.BUTTON_LONG_PRESS, "ms", time_ticks)
+            #print("DEBUG: Button", button_num, "held for", settings.BUTTON_LONG_PRESS, "ms", time_ticks)
             settings.BUTTON_PRESS_TIME[button_num] = None
             settings.button_held_state[button_num] = True
             return button_num, settings.BUTTON_HELD
 
     if button_event:
         if button_event.pressed:
-            print("DEBUG: Button",button_event.key_number,"Pressed at",button_event.timestamp)
+            #print("DEBUG: Button",button_event.key_number,"Pressed at",button_event.timestamp)
             settings.BUTTON_PRESS_TIME[button_event.key_number] = button_event.timestamp
             return button_event.key_number, settings.BUTTON_PRESSED
 
         if button_event.released:
             settings.BUTTON_PRESS_TIME[button_event.key_number] = None
             if settings.button_held_state[button_event.key_number] is True:
-                print("DEBUG: Button",button_event.key_number,"Released after a hold",button_event.timestamp)
+                #print("DEBUG: Button",button_event.key_number,"Released after a hold",button_event.timestamp)
                 settings.button_held_state[button_event.key_number] = False
             else:
-                print("DEBUG: Button",button_event.key_number,"Released at",button_event.timestamp)
+                #print("DEBUG: Button",button_event.key_number,"Released at",button_event.timestamp)
                 return button_event.key_number, settings.BUTTON_RELEASED
     return None, None
 
@@ -206,10 +206,10 @@ def get_volume_adc():
     # VOLUME_ADC Self Calibration
     if adc_0_value < settings.VOLUME_ADC_MIN:
         settings.VOLUME_ADC_MIN = adc_0_value
-        print("DEBUG: Calibration: New Min VOLUME_ADC value", settings.VOLUME_ADC_MIN)
+        #print("DEBUG: Calibration: New Min VOLUME_ADC value", settings.VOLUME_ADC_MIN)
     if adc_0_value > settings.VOLUME_ADC_MAX:
         settings.VOLUME_ADC_MAX = adc_0_value
-        print("DEBUG: Calibration: New Max VOLUME_ADC value", settings.VOLUME_ADC_MAX)
+        #print("DEBUG: Calibration: New Max VOLUME_ADC value", settings.VOLUME_ADC_MAX)
 
     VOLUME_ADC_smoothed = settings.VOLUME_ADC_SMOOTHING * adc_0_value + (1 - settings.VOLUME_ADC_SMOOTHING) * VOLUME_ADC_smoothed
     return VOLUME_ADC_smoothed
@@ -222,10 +222,10 @@ def get_tuning_adc():
     #TUNING_ADC Self Calibration
     if turning_adc_value < settings.TUNING_ADC_MIN:
         settings.TUNING_ADC_MIN = turning_adc_value
-        print("DEBUG: Calibration: New Min TUNING_ADC value", settings.TUNING_ADC_MIN)
+        #print("DEBUG: Calibration: New Min TUNING_ADC value", settings.TUNING_ADC_MIN)
     if turning_adc_value > settings.TUNING_ADC_MAX:
         settings.TUNING_ADC_MAX = turning_adc_value
-        print("DEBUG: Calibration: New Max TUNING_ADC value", settings.TUNING_ADC_MAX)
+        #print("DEBUG: Calibration: New Max TUNING_ADC value", settings.TUNING_ADC_MAX)
 
     TUNING_ADC_smoothed = settings.TUNING_ADC_SMOOTHING * turning_adc_value + (1 - settings.TUNING_ADC_SMOOTHING) * TUNING_ADC_smoothed
     return TUNING_ADC_smoothed
@@ -355,7 +355,7 @@ def wait_for_pi():
         usb_cdc.data.flush()
         uart_data = receive_uart()
         if uart_data:
-            print("Waiting: UART echo:",uart_data)
+            #print("Waiting: UART echo:",uart_data)
             try:
                 if (
                     uart_data[0] == "H"
@@ -367,7 +367,7 @@ def wait_for_pi():
                     pi_state = True
                     pi_zero_heartbeat_time = time.time()
             except Exception as e:
-                print("Error: Uart,", e)
+                print("ERROR: Uart bad while wait_for_pi,", e)
     handle_buttons()
     time.sleep(0.1)
 
@@ -618,4 +618,4 @@ while True:
 
 
         except Exception as error:
-            print("ERROR: Uart:", error)
+            print("ERROR: Uart during pico Run:", error)

@@ -7,6 +7,19 @@ import shutil
 import filecmp
 import mount
 import time
+import signal
+
+# Add a flag to indicate whether the script should exit
+exit_requested = False
+
+def signal_handler(sig, frame):
+    """Handle CTRL + C signal to exit gracefully."""
+    global exit_requested
+    print("CTRL + C pressed. Exiting gracefully...")
+    exit_requested = True
+
+# Register signal handler for SIGINT
+signal.signal(signal.SIGINT, signal_handler)
 
 def mergeFlatDir(src_dir, dst_dir):
     if not os.path.exists(dst_dir):
@@ -161,26 +174,31 @@ if PI:
         print("ERROR: No USB Path found, Exiting")
         sys.exit()
 
-    # Board to Board UART:
+    # Board to Board UART initialization
     uart = None
     print("INFO: Trying to open serial port:", settings.SERIAL_PORT, "(This can take several seconds)")
-    while not uart:
-        uart = None
+
+    # Retry opening the serial port until successful or until exit is requested
+    while not uart and not exit_requested:
         try:
             uart = serial.Serial(settings.SERIAL_PORT, settings.BAUD_RATE, timeout=settings.UART_TIMEOUT)
+            print("Startup: Opened UART port:", uart.name)  # Check which port was really used
+        except serial.SerialException as e:
+            print("Error: Could not open a serial connection to the Pi Pico")
+            print("ERROR: Uart:", e)
+            uart = None  # Reset to None to continue the loop
+            time.sleep(3)  # Wait before retrying
         except KeyboardInterrupt:
-            pass
-        finally:
-            print("INFO: Trying to open serial port:", settings.SERIAL_PORT, "(This can take several seconds)")
-            time.sleep(3)
-    try:
-        uart.write(b'I,Serial Start\n')  # write a string
-        print("Startup: Opened UART port:", uart.name)  # check which port was really used
-    except Exception as e:
-        print("Error: Could not open a serial connection to the Pi Pico")
-        _, err, _ = sys.exc_info()
-        print("Uart Error: (%s)" % err, e, "Exiting")
-        uart = False
-        sys.exit()
+            # If CTRL + C is pressed, handle it gracefully
+            print("Interrupted by user. Exiting...")
+            exit_requested = True
+            
+    # Cleanup and exit
+    if exit_requested:
+        # Perform any necessary cleanup here
+        if uart and uart.is_open:
+            uart.close()
+        sys.exit(0)
 else:
     print("Not running on a Raspberry Pi")
+   
