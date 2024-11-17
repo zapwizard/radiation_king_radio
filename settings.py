@@ -49,7 +49,8 @@ TUNING_LOCK_ON = 2  # Angle: Adjusts how precise you need to be to land on a sta
 BAND_CHANGE_VOLUME = 0.5 # Float: How loud the band changing sound effect is played (Multiplier of current volume)
 BAND_CALLOUT = True # Whether or not to make an audio callout when the band changes
 BAND_CALLOUT_FILE = "callout.ogg" # Name of the radio band callout file
-BAND_CALLOUT_VOLUME = 0.7 # Float: How loud the audible band callouts changing sound effect is played (Multiplier of current volume)
+BAND_CALLOUT_VOLUME = 1 # Float: How loud the audible band callouts changing sound effect is played (Multiplier of current volume)
+BAND_CALLOUT_WAIT = True # Whether or not to wait for the bang callout file to finish before switching the band
 EFFECTS_VOLUME = 0.6 # How loud the on/off and other sound effects are played
 TIME_ZONE = 'US/Central'
 END_ZONE = 10 # Angle: How close should the stations get to the ends of the dial
@@ -58,7 +59,7 @@ END_ZONE = 10 # Angle: How close should the stations get to the ends of the dial
 MOTOR_MIN_ANGLE = 14 # This must match the numbers in pico_settings.py
 MOTOR_MAX_ANGLE = 168
 MOTOR_RANGE = MOTOR_MAX_ANGLE - MOTOR_MIN_ANGLE
-SWEEP_ENABLED = True # Whether or not the radio will tune through the whole tuning range
+SWEEP_ENABLED = False # Whether or not the radio will tune through the whole tuning range
 
 #Sound effects
 

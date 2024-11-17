@@ -60,6 +60,7 @@ def copyTree(src, dst):
                 mergeFlatDir(s, d)
 
 os.environ["JOBLIB_TEMP_FOLDER"] = "/tmp"
+os.environ['SDL_AUDIODRIVER'] = 'alsa'
 
 print("INFO: Starting up")
 

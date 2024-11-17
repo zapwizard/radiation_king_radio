@@ -11,7 +11,7 @@ from ulab import numpy as np
 DISABLE_HEARTBEAT_LED = False # Note you won't be able to determine if the code is running without using a terminal
 
 # Sweep: The movement of the dial at startup and during band changes.
-SWEEP_DELAY = 0.003 # The speed at which the dial sweeps across the range
+SWEEP_DELAY = 0.002 # The speed at which the dial sweeps across the range
 
 # Uart Related
 UART_HEARTBEAT_INTERVAL = 3
@@ -92,7 +92,7 @@ button_event_type = None
 
 #Switches:
 switches = keypad.Keys((board.GP14,board.GP8),value_when_pressed=False, pull=True, interval=0.1)
-SWITCH_QUANTITY = 2
+SWITCH_QUANTITY = 2 # These are the Potentiometer switches, not buttons!
 SWITCH_CCW = False # Invert if your switch behavior seems backwards
 SWITCH_CW = not SWITCH_CCW
 

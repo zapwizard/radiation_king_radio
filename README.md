@@ -162,3 +162,6 @@ An array of 8 Neopixels are used to light up the gauge display. As you change ba
 ##Ultra Sonic Remote:
 Using a SPH0641LU4H-1 Mems Microphone, and PWM audio a 1950's mechanical remote can be setup to operate the radio. A high pass filter is applied to the audio prevent the music from interfering with the remote control.
 A FFT of the ultrasonic samples is performed. The index of the highest peak determines which button has been pressed.
+
+#Band Callouts:
+Inside each band fold you can place a "callout.ogg" file. This will optionally (see settings) playback the file each time you change radio bands. I created my callout file by using voicemaker.in, Matthew Englis at -15% speed. I have found this voice is very closer fo the storyteller's voice.

@@ -28,6 +28,7 @@ import re
 
 
 
+
 #Logging
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -89,7 +90,7 @@ try:
     print("Startup: Starting sound initialization")
 
     pygame.mixer.quit()
-    pygame.mixer.init(44100, -16, 2, 4096)
+    pygame.mixer.init(44100, -16, 2, 8192)
     if not pygame.mixer.get_init():
         print("Error: Sound failed to initialize")
 except Exception as e:
@@ -110,9 +111,16 @@ def get_default_station_data(path='', sub_folder_name='', band_name=''):
 
 
 def extract_number(filename):
-    # Extract numbers from filename using regex
-    match = re.search(r'\d+', os.path.basename(filename))
-    return int(match.group()) if match else float('inf')
+    # Use regex to match numbers anywhere in the filename, including at the end or in parentheses
+    match = re.findall(r'(\d+)', os.path.basename(filename))
+    if match:
+        # Convert all matched numbers to integers and return them in order
+        return tuple(int(num) for num in match)
+    else:
+        # Return a large tuple to ensure unexpected formats are sorted last
+        return (float('inf'),)
+
+
 
 print("Startup: Starting pygame initialization")
 os.environ["SDL_VIDEODRIVER"] = "dummy"  # Make a fake screen
@@ -315,6 +323,10 @@ def get_audio_length_mutagen(file_path):
         print(f"ERROR: While getting duration of {file_path} with mutagen: {e}")
         return 0
 
+
+def has_valid_ogg_files(path):
+    return any(file.name.endswith('.ogg') for file in os.scandir(path))
+
 def get_radio_bands(radio_folder):
     global master_start_time
     print("Startup: Starting folder search in:", radio_folder)
@@ -331,12 +343,12 @@ def get_radio_bands(radio_folder):
 
             for sub_folder in sorted(os.scandir(folder.path), key=lambda f: f.name.lower()):
                 if sub_folder.is_dir() and has_valid_ogg_files(sub_folder.path):
-                    station_data = handle_station_folder(sub_folder, folder.name)
+                    # Set force_rebuild to True if needed
+                    station_data = handle_station_folder(sub_folder, folder.name, force_rebuild=settings.RESET_CACHE)
                     if station_data:
                         sub_radio_bands.append(station_data)
 
             if sub_radio_bands:
-                # Append a tuple or a dictionary to ensure the entire structure is preserved
                 radio_bands.append({
                     "folder_name": folder.name,
                     "stations": sub_radio_bands
@@ -347,72 +359,39 @@ def get_radio_bands(radio_folder):
     
     return radio_bands
 
-
-
+              
                 
-                
-def has_valid_ogg_files(path):
-    return any(file.name.endswith('.ogg') for file in os.scandir(path))
 
-
-def handle_station_folder(sub_folder, band_name):
+def handle_station_folder(sub_folder, band_name, force_rebuild=False):
     path = sub_folder.path
     station_ini_file = os.path.join(path, "station.ini")
-    rebuild_needed = settings.RESET_CACHE or not os.path.exists(station_ini_file)
+    rebuild_needed = settings.RESET_CACHE or force_rebuild or not os.path.exists(station_ini_file)
     station_data = {}
 
     if not rebuild_needed:
         try:
-            # Check if the station.ini file is blank
-            if os.path.getsize(station_ini_file) == 0:
-                print(f"Warning: station.ini file for {sub_folder.name} is blank. Rebuilding cache.")
-                rebuild_needed = True
-            else:
-                # Read the station.ini file
-                station_ini_parser = configparser.ConfigParser()
-                station_ini_parser.read(station_ini_file)
-                if station_ini_parser.has_section('cache'):
-                    # Read the station_data as a JSON string and convert it to a dictionary
-                    station_data_str = station_ini_parser.get('cache', 'station_data')
+            station_ini_parser = configparser.ConfigParser()
+            station_ini_parser.read(station_ini_file)
+            
+            if station_ini_parser.has_section('cache'):
+                station_data_str = station_ini_parser.get('cache', 'station_data')
+                station_data = json.loads(station_data_str)
 
-                    # Parse the JSON string into a dictionary
-                    station_data = json.loads(station_data_str)
-
-                    # Ensure JSON booleans are converted to Python booleans
-                    station_data['station_ordered'] = bool(station_data.get('station_ordered', False))
-
-                    # Validate the loaded station data
-                    if validate_station_data(station_data):
-                        # Check if the number of .ogg files matches the cached list
-                        current_station_files = sorted(glob.glob(os.path.join(path, "*.ogg")), key=extract_number)
-                        if len(current_station_files) != len(station_data.get("station_files", [])):
-                            print(f"Warning: Number of audio files in {sub_folder.name} has changed. Rebuilding cache.")
-                            rebuild_needed = True
-                        else:
-                            print(f"CACHE: Loaded cached data successfully for {sub_folder.name}")
-                            return station_data
-                    else:
-                        print(f"Warning: Invalid station data found in cache for {sub_folder.name}, rebuilding cache.")
-                        rebuild_needed = True
-                else:
-                    print(f"Warning: No 'cache' section found in station.ini for {sub_folder.name}, rebuilding cache.")
+                # Check if the current path matches the cached path
+                if station_data.get("path") != path:
+                    print(f"Info: Path mismatch detected for {sub_folder.name}, rebuilding cache.")
                     rebuild_needed = True
 
-        except json.JSONDecodeError as json_error:
-            print(f"Error: JSON decoding failed for {sub_folder.name} with error: {json_error}")
-            rebuild_needed = True
         except Exception as error:
-            print(f"Error accessing cache for {sub_folder.name}: {error}")
+            print(f"Error: {error}")
             rebuild_needed = True
 
-    # If rebuild is needed, rebuild the cache
     if rebuild_needed:
         station_data = rebuild_station_cache(path, sub_folder.name, band_name)
-        if not validate_station_data(station_data):
-            print(f"ERROR: Failed to rebuild cache for {sub_folder.name}. Returning default station data.")
-            station_data = get_default_station_data(path, sub_folder.name, band_name)
 
     return station_data
+
+
 
 
 
@@ -423,11 +402,14 @@ def validate_station_data(data):
 def rebuild_station_cache(path, sub_folder_name, band_name):
     print(f"INFO: Starting Data Cache Rebuild for {sub_folder_name}")
     station_ini_file = os.path.join(path, "station.ini")
-    station_files = sorted(glob.glob(os.path.join(path, "*.ogg")), key=extract_number)
-    
+    station_files = glob.glob(os.path.join(path, "*.ogg"))
+
     if not station_files:
         print(f"Warning: No audio files found in {sub_folder_name}. Skipping station.")
         return get_default_station_data(path, sub_folder_name, band_name)
+
+    # Sort files using the updated extract_number function
+    station_files = sorted(station_files, key=extract_number)
 
     # Get audio lengths in parallel
     station_lengths = []
@@ -468,6 +450,10 @@ def rebuild_station_cache(path, sub_folder_name, band_name):
         except Exception as e:
             print(f"Error reading settings from station.ini for {sub_folder_name}: {str(e)}")
 
+    # Ensure files are sorted by number if station is ordered
+    if station_data["station_ordered"]:
+        station_files = sorted(station_files, key=extract_number)
+
     # Update station_data with new values
     station_data.update({
         "station_files": station_files,
@@ -492,6 +478,8 @@ def rebuild_station_cache(path, sub_folder_name, band_name):
         print(f"Error: Failed to save cache for {sub_folder_name}: {str(e)}")
 
     return station_data
+
+
 
 
 
@@ -563,19 +551,18 @@ def tuning(manual=False):
                   # "Needle=",motor_angle,
                   # "Range to station =", round(range_to_station,1))
         else:
-            #print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_angle,
-            #      "Needle=",motor_angle)
+            #print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_angle,"Needle=",motor_angle)
             select_station(nearest_station_num, False)
 
     # Stop any music and play just static if the needle is not near any station position
     else:
         if active_station and active_station is not None:
-            #print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_angle,"Needle=", motor_angle, "tuning_seperation =", tuning_seperation)
+            print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_angle,"Needle=", motor_angle, "tuning_seperation =", tuning_seperation)
             if active_station:
                 active_station.stop()
             pygame.mixer.music.stop()
             active_station = None
-            station_num = None
+            #station_num = None
             tuning_locked = False
             play_static(True)
     tuning_prev_angle = motor_angle
@@ -650,8 +637,12 @@ def select_band(new_band_num, restore_angle=None):
         channel = pygame.mixer.Channel(3)
         channel.play(band_callout_sound)
         channel.set_volume(volume * settings.BAND_CALLOUT_VOLUME)
+        if settings.BAND_CALLOUT_WAIT:
+            while channel.get_busy():  # Wait until the callout sound is finished
+                time.sleep(0.1)
     else:
         print(f"select_band: ERROR: Band callout file does not exist at {band_callout_path}")
+
 
     # Play band change sound
     pygame.mixer.Channel(4).play(snd_band)
@@ -1242,13 +1233,59 @@ class Radiostation:
         print("Info: Randomized song order")
 
     def order_station(self):
-        # Order by extracting numbers from filenames for sorting.
-        ordered_files = sorted(list(self.files), key=extract_number)
-        ordered_lengths = sorted(list(self.song_lengths), key=lambda _: extract_number(self.files[0]))
-        self.files = deque(ordered_files)
-        self.song_lengths = deque(ordered_lengths)
-        self.is_ordered = True  # Set mode to ordered
-        print("Info: Ordered song list")
+        self.is_ordered = True
+
+        # Reload station data from the cache
+        cache_file = os.path.join(self.path, "station.ini")
+        station_ini_parser = configparser.ConfigParser()
+
+        if os.path.exists(cache_file):
+            try:
+                station_ini_parser.read(cache_file)
+                if station_ini_parser.has_section("cache"):
+                    station_data = json.loads(station_ini_parser.get("cache", "station_data"))
+                    self.files = deque(station_data["station_files"])
+                    self.song_lengths = deque(station_data["station_lengths"])
+                    self.station_offset = station_data.get("station_start", 0)
+                    print("Info: Station data reloaded from cache successfully")
+            except Exception as e:
+                print(f"Error loading station data from cache: {str(e)}")
+
+        # Recalculate the playback position based on the reference time
+        current_time = time.time()
+        elapsed_time = current_time - (master_start_time + self.station_offset)
+
+        # If the total station length is valid and elapsed_time is positive
+        total_station_length = sum(self.song_lengths)
+        if total_station_length > 0 and elapsed_time > 0:
+            # Calculate the current position within the total station length
+            self.position = elapsed_time % total_station_length
+
+            # Iterate over song lengths to find the correct song and position within it
+            accumulated_length = 0
+            for i, length in enumerate(self.song_lengths):
+                if accumulated_length + length > self.position:
+                    # Rotate the deques to start from the correct song
+                    self.files.rotate(-i)
+                    self.song_lengths.rotate(-i)
+                    # Adjust self.position to be the position within the current song
+                    self.position -= accumulated_length
+                    break
+                accumulated_length += length
+
+        # Reset reference_time to align with the current position
+        self.reference_time = current_time - self.position
+
+        # Use live_playback to start playing from the correct position
+        self.live_playback()
+
+        print("Info: Reloaded and ordered station from cache, restored playback position")
+
+
+
+
+
+
         
     def toggle_order(self):
         if self.is_ordered:
