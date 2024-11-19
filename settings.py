@@ -30,7 +30,6 @@ ACTIONS = {
 # The RESET_CACHE settings must be set to False before your the next reboot
 # You can optionally reset the cache on any single folder by deleting the [CACHE] section inside the station.ini file.
 RESET_CACHE = False
-CACHE_VERSION = 1  # Increment this if the data structure changes
 
 # Music related
 STATIONS_ROOT_FOLDER = "radio/"
@@ -45,7 +44,7 @@ REWIND_INCREMENT = 5 # in seconds
 
 # Tuning related:
 TUNING_NEAR = 8 # Angle: Adjusts how near you need to be to hear a station in the static while turning
-TUNING_LOCK_ON = 2  # Angle: Adjusts how precise you need to be to land on a station (Higher = more accuracy required)
+TUNING_LOCK_ON = 4  # Angle: Adjusts how precise you need to be to land on a station (Higher = more accuracy required)
 BAND_CHANGE_VOLUME = 0.5 # Float: How loud the band changing sound effect is played (Multiplier of current volume)
 BAND_CALLOUT = True # Whether or not to make an audio callout when the band changes
 BAND_CALLOUT_FILE = "callout.ogg" # Name of the radio band callout file

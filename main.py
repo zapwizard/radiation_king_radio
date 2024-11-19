@@ -50,7 +50,6 @@ signal.signal(signal.SIGINT, signal_handler)
 # Variables
 clock = pygame.time.Clock()
 volume = float(0.05)
-volume_time = time.time()
 volume_prev = float(0.0)
 station_num = int(0)
 station_list = []
@@ -220,8 +219,8 @@ def blink_led():
 
 
 def set_volume_level(volume_level, direction=None):
-    global volume, volume_time, volume_prev
-
+    global volume, volume_prev
+    
     if volume_level == volume_prev:
         return
 
@@ -237,9 +236,10 @@ def set_volume_level(volume_level, direction=None):
     else:
         static_volume = 0
     pygame.mixer.Channel(1).set_volume(static_volume)
-    # print("Volume =", volume, "Static_volume = ", static_volume)  # Debug
+    #print("Volume =", volume, "Static_volume = ", static_volume)  # Debug
 
-    volume_time = time.time()
+    volume_prev = volume_level
+
     return volume
 
 
@@ -516,57 +516,59 @@ def play_static(play):
 
 # Tune into a station based on the motor angle
 def tuning(manual=False):
-    global motor_angle, tuning_locked, tuning_prev_angle, station_num, active_station
+    global motor_angle, tuning_locked, tuning_prev_angle, active_station
+    
+    if manual: tuning_locked = False
 
-    if motor_angle == tuning_prev_angle and not manual: # Do nothing if the angle is unchanged
+    if motor_angle == tuning_prev_angle and not manual:  # Do nothing if the angle is unchanged
         return
+    #print("DEBUG:tuning,motor_angle=",motor_angle)
 
-    nearest_station_num = get_nearest_station(motor_angle) # Find the nearest radio station to the needle position
-    station_angle = get_station_pos(nearest_station_num)  # Get the exact angle of the nearest station
-    range_to_station = abs(station_angle - motor_angle)  # Find the angular distance to nearest station
+    nearest_station_num = get_nearest_station(motor_angle)
+    station_angle = get_station_pos(nearest_station_num)
+    range_to_station = abs(station_angle - motor_angle)
 
-    # Play at volume with no static when needle is close to station position
     if range_to_station <= settings.TUNING_LOCK_ON:
         if not tuning_locked:
-            tuning_volume = volume
-            # print("DEBUG: Tuning: Locked to station #", nearest_station_num,
-                  # "at angle:", station_angle,
-                  # "Needle angle=", motor_angle,
-                  # "Lock on tolerance=", settings.TUNING_LOCK_ON)
-            select_station(nearest_station_num, False)
-            pygame.mixer.music.set_volume(volume)
-            play_static(False)
-            tuning_locked = True
-
-    # Start playing audio with static when the needle get near a station position
+            lock_to_station(nearest_station_num)
     elif range_to_station < settings.TUNING_NEAR:
-        tuning_volume = clamp(round(volume / range_to_station, 3),settings.VOLUME_MIN,1)
-        pygame.mixer.music.set_volume(tuning_volume)
-
-        if active_station and active_station is not None:
+        adjust_tuning_volume(range_to_station)
+        if active_station:
             play_static(True)
             tuning_locked = False
-            # print("DEBUG: Tuning: Lost station lock on #",
-                  # nearest_station_num, "at angle:",station_angle,
-                  # "Needle=",motor_angle,
-                  # "Range to station =", round(range_to_station,1))
         else:
-            #print("Tuning: Nearing station #", nearest_station_num, "at angle:", station_angle,"Needle=",motor_angle)
             select_station(nearest_station_num, False)
-
-    # Stop any music and play just static if the needle is not near any station position
     else:
-        if active_station and active_station is not None:
-            print("Tuning: No active station. Nearest station # is:", nearest_station_num, "at angle:", station_angle,"Needle=", motor_angle, "tuning_seperation =", tuning_seperation)
-            if active_station:
-                active_station.stop()
-            pygame.mixer.music.stop()
-            active_station = None
-            #station_num = None
-            tuning_locked = False
-            play_static(True)
-    tuning_prev_angle = motor_angle
+        stop_station_playback()
     
+    tuning_prev_angle = motor_angle
+
+# Helper function to lock to a station
+def lock_to_station(nearest_station_num):
+    global tuning_locked, volume
+    tuning_volume = volume
+    select_station(nearest_station_num, False)
+    pygame.mixer.music.set_volume(volume)
+    play_static(False)
+    tuning_locked = True
+    #print("DEBUG:lock_to_station:",nearest_station_num)
+
+# Helper function to adjust the tuning volume based on proximity
+def adjust_tuning_volume(range_to_station):
+    tuning_volume = clamp(round(volume / range_to_station, 3), settings.VOLUME_MIN, 1)
+    pygame.mixer.music.set_volume(tuning_volume)
+    
+
+# Helper function to stop station playback and play static
+def stop_station_playback():
+    global active_station, station_num, tuning_locked
+    if active_station:
+        active_station.stop()
+        #pygame.mixer.music.stop()
+        active_station = None
+        station_num = None
+        tuning_locked = False
+        play_static(True)
 
 def next_station():
     global station_num, total_station_num
@@ -595,7 +597,7 @@ def prev_station():
 
 def select_band(new_band_num, restore_angle=None):
     global radio_band, total_station_num, tuning_seperation
-    global radio_band_total, station_list, stations, tuning_locked
+    global radio_band_total, station_list, stations
     global active_station, volume, snd_band
 
     print(f"select_band: DEBUG: select_band called with new_band_num={new_band_num}, type={type(new_band_num)}")
@@ -628,26 +630,8 @@ def select_band(new_band_num, restore_angle=None):
         print(f"select_band: IndexError: new_band_num {new_band_num} is out of the range of the radio_band_list.")
     except Exception as e:
         print("select_band: Unexpected error accessing radio_band_list:", str(e))
-
-
-    # Audible Band callout
-    band_callout_path = os.path.join(folder_path, "callout.ogg")  # Example file name
-    if os.path.exists(band_callout_path):
-        band_callout_sound = pygame.mixer.Sound(band_callout_path)
-        channel = pygame.mixer.Channel(3)
-        channel.play(band_callout_sound)
-        channel.set_volume(volume * settings.BAND_CALLOUT_VOLUME)
-        if settings.BAND_CALLOUT_WAIT:
-            while channel.get_busy():  # Wait until the callout sound is finished
-                time.sleep(0.1)
-    else:
-        print(f"select_band: ERROR: Band callout file does not exist at {band_callout_path}")
-
-
-    # Play band change sound
-    pygame.mixer.Channel(4).play(snd_band)
-    pygame.mixer.Channel(4).set_volume(volume * settings.BAND_CHANGE_VOLUME)
-
+    
+    
     # Set the station list based on the updated structure
     station_data_list = band_data.get("stations", [])
     
@@ -668,25 +652,37 @@ def select_band(new_band_num, restore_angle=None):
                 print(f"select_band: ERROR: Failed to initialize RadioClass for station: {station_data.get('station_name', 'Unknown')}, error: {str(e)}")
         else:
             print(f"select_band: ERROR: Expected station data to be a dictionary, got {type(station_data)} instead")
-    sweep(restore_angle)
-
+    
     print(f"select_band: Total stations loaded: {total_station_num}")
+    
+    # Play band change sound
+    channel = pygame.mixer.Channel(4)
+    channel.play(snd_band)
+    channel.set_volume(volume * settings.BAND_CHANGE_VOLUME)
+    #while channel.get_busy():  # Wait until the change sound is finished
+    #    time.sleep(0.01)
+
+    if settings.BAND_CALLOUT:
+        # Audible Band callout
+        band_callout_path = os.path.join(folder_path, "callout.ogg")  # Example file name
+        if os.path.exists(band_callout_path):
+            band_callout_sound = pygame.mixer.Sound(band_callout_path)
+            channel = pygame.mixer.Channel(3)
+            channel.play(band_callout_sound)
+            channel.set_volume(volume * settings.BAND_CALLOUT_VOLUME)
+            if settings.BAND_CALLOUT_WAIT:
+                while channel.get_busy():  # Wait until the callout sound is finished
+                    time.sleep(0.01)
+        else:
+            print(f"select_band: ERROR: Band callout file does not exist at {band_callout_path}")
+
+    sweep(restore_angle)
 
 
 
 
 def select_station(new_station_num, manual=False):
     global station_num, active_station, motor_angle, tuning_locked, stations, total_station_num
-
-    # Validate the station list
-    if not stations:
-        print("Warning: No stations available to select.")
-        return
-
-    # Check if the new station number is valid
-    if new_station_num < 0 or new_station_num >= len(stations):
-        print("Warning: Selected an invalid station number:", new_station_num, "/", len(stations) - 1)
-        return
 
     # If the station number hasn't changed and it's not a manual tune, do nothing
     if new_station_num == station_num and not manual:
@@ -769,8 +765,10 @@ def next_band():
         print("Tuning: Next radio band", radio_band, "/", radio_band_total)
         select_band(new_band, motor_angle)
 
-def wait_for_pico(uart_message):
+def wait_for_pico():
     global pico_state, heartbeat_time
+
+    uart_message = receive_uart()
 
     # Process the UART message if provided
     if uart_message:
@@ -806,14 +804,14 @@ def shutdown_zero():
 def send_uart(command_type, data1, data2="", data3="", data4=""):
     #print(f"DEBUG: send_uart called with command_type={command_type}, data1={data1}, data2={data2}, data3={data3}, data4={data4}")
     # Debug each argument to see if they are of valid types
-    if not all(isinstance(arg, (str, bytes, os.PathLike, bool, int, float)) for arg in [data1, data2, data3, data4]):
-        print("ERROR: One of the data arguments is an unsupported type. Arguments must be str, bytes, os.PathLike, bool, int, or float.")
-        raise TypeError("Invalid type passed to send_uart")
+    #if not all(isinstance(arg, (str, bytes, os.PathLike, bool, int, float)) for arg in [data1, data2, data3, data4]):
+    #    print("ERROR: One of the data arguments is an unsupported type. Arguments must be str, bytes, os.PathLike, bool, int, or float.")
+    #    raise TypeError("Invalid type passed to send_uart")
     # Convert booleans if necessary
-    data1 = "1" if data1 is True else ("0" if data1 is False else str(data1))
-    data2 = "1" if data2 is True else ("0" if data2 is False else str(data2))
-    data3 = "1" if data3 is True else ("0" if data3 is False else str(data3))
-    data4 = "1" if data4 is True else ("0" if data4 is False else str(data4))
+    #data1 = "1" if data1 is True else ("0" if data1 is False else str(data1))
+    #data2 = "1" if data2 is True else ("0" if data2 is False else str(data2))
+    #data3 = "1" if data3 is True else ("0" if data3 is False else str(data3))
+    #data4 = "1" if data4 is True else ("0" if data4 is False else str(data4))
     # Proceed to write the UART message
     if setup.uart:
         try:
@@ -826,6 +824,7 @@ def send_uart(command_type, data1, data2="", data3="", data4=""):
 def receive_uart():
     if not setup.uart:
         return []
+        
     if not setup.uart.is_open:
         try:
             setup.uart.open()
@@ -839,7 +838,7 @@ def receive_uart():
 
     try:
         line = setup.uart.readline()  # Read data until "\n" or timeout
-        setup.uart.flush()
+        #setup.uart.flush()
         if line:
             line = line.decode("utf-8").strip("\n")  # Convert from bytes to string and strip new line
             parsed_data = line.split(",")
@@ -876,9 +875,9 @@ schedule.every().day.at("00:00:01").do(midnight)
 def process_uart_message(uart_message):
     global pico_heartbeat_time, pico_state
 
-    if not isinstance(uart_message, list) or not all(isinstance(item, str) for item in uart_message) or len(uart_message) <= 1:
-        print("DEBUG: Invalid UART message structure:", uart_message)
-        return  # Early exit if the message is not as expected
+    # if not isinstance(uart_message, list) or not all(isinstance(item, str) for item in uart_message) or len(uart_message) <= 1:
+        # print("DEBUG: Invalid UART message structure:", uart_message)
+        # return  # Early exit if the message is not as expected
 
     # Direct processing based on the message type
     message_type = uart_message[0]
@@ -967,6 +966,7 @@ def sweep(restore_angle):
     elif restore_angle:
         print("sweep, DEBUG: Sweep Skipped")
         set_motor(restore_angle, True)
+        tuning(manual = True)
         send_uart("C", "NoSweep")
 
 
@@ -977,15 +977,12 @@ def run():
     # Initial heartbeat loop until we get a successful response from Pi Pico
     print("Waiting: Waiting for Pi Pico heartbeat")
     while not pico_state:
-        # Check GPIO input if available
-        if setup.gpio_available:
-            check_gpio_input()
+        wait_for_pico()
 
-        # Receive UART message once per loop iteration
-        uart_message = receive_uart()
+    # Check GPIO input if available
+    if setup.gpio_available:
+        check_gpio_input()
 
-        # Pass the UART message to wait_for_pico
-        wait_for_pico(uart_message)
 
     # Step 1: Cache all radio bands and stations
     radio_band_list = get_radio_bands(settings.STATIONS_ROOT_FOLDER)
@@ -1021,18 +1018,19 @@ def run():
             # Run any pending scheduled jobs
             schedule.run_pending()
 
-            # Receive UART message
-            uart_message = receive_uart()
-
             # Check if the Pi Pico is still sending heartbeats
             if now - pico_heartbeat_time > settings.PICO_HEARTBEAT_TIMEOUT:
                 standby()
-                wait_for_pico(uart_message)
+                wait_for_pico()
                 pico_heartbeat_time = now
+
+            # Receive UART message
+            uart_message = receive_uart()
 
             # Process received UART message during normal operation
             if uart_message:
                 try:
+                    #print(uart_message) # Debug
                     process_uart_message(uart_message)
                 except Exception as error:
                     print("ERROR: Error in processing UART message:", str(error))
@@ -1054,7 +1052,7 @@ def run():
                 send_uart("H", "Zero")
                 heartbeat_time = now
 
-            clock.tick(200)
+            #clock.tick(200)
     except KeyboardInterrupt:
         print("KeyboardInterrupt received, exiting...")
         exit_script()  # Call cleanup function
@@ -1128,7 +1126,7 @@ class Radiostation:
 
             #  Subtract time until we are below the station length
             if self.station_length and self.position > self.station_length:
-                print("Info: position:",round(self.position, 3),"longer than station length:",round(self.song_length, 3))
+                #print("Info: position:",round(self.position, 3),"longer than station length:",round(self.song_length, 3))
                 while self.position > self.station_length:
                     print("Info: Looping station list")
                     self.position = self.position - self.station_length
@@ -1136,7 +1134,7 @@ class Radiostation:
             #  Find where in the station list we should be base on start position
             self.song_length = self.song_lengths[0]  # length of the current song
             if self.song_length and self.position > self.song_length:
-                print("Info: Position:",round(self.position, 3),"is longer than the song length:",round(self.song_length, 3),"skipping ahead")
+                #print("Info: Position:",round(self.position, 3),"is longer than the song length:",round(self.song_length, 3),"skipping ahead")
 
                 #  Skip ahead until we reach the correct time
                 while self.position > self.song_length:

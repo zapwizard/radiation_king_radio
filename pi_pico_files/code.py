@@ -78,8 +78,8 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
 
         # Keep needle within the preset limits
         angle = constrain(angle, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
-        if not from_uart:
-            send_uart("M", str(angle))  # Send angle up to the Pi Zero
+        #if not from_uart:
+        #    send_uart("M", str(angle))  # Send angle up to the Pi Zero
 
         radian = angle * 0.0174  # Convert the angle to a radian (math below only works on radians)
         sin_radian = math.sin(radian)  # Calculate sin
@@ -199,60 +199,83 @@ def brightness_control():
     set_pixels(brightness_smoothed)
     #print("DEBUG: Brightness:",brightness_smoothed)
 
+
 def get_volume_adc():
-    global VOLUME_ADC_smoothed
     adc_0_value = settings.VOLUME_ADC.value
 
-    # VOLUME_ADC Self Calibration
-    if adc_0_value < settings.VOLUME_ADC_MIN:
-        settings.VOLUME_ADC_MIN = adc_0_value
-        #print("DEBUG: Calibration: New Min VOLUME_ADC value", settings.VOLUME_ADC_MIN)
-    if adc_0_value > settings.VOLUME_ADC_MAX:
-        settings.VOLUME_ADC_MAX = adc_0_value
-        #print("DEBUG: Calibration: New Max VOLUME_ADC value", settings.VOLUME_ADC_MAX)
+    # Clamp adc_0_value within the self-calibrated min and max range
+    settings.VOLUME_ADC_MIN = min(settings.VOLUME_ADC_MIN, adc_0_value)
+    settings.VOLUME_ADC_MAX = max(settings.VOLUME_ADC_MAX, adc_0_value)
 
-    VOLUME_ADC_smoothed = settings.VOLUME_ADC_SMOOTHING * adc_0_value + (1 - settings.VOLUME_ADC_SMOOTHING) * VOLUME_ADC_smoothed
-    return VOLUME_ADC_smoothed
-
-
-def get_tuning_adc():
-    global TUNING_ADC_smoothed
-    turning_adc_value = settings.TUNING_ADC.value
-
-    #TUNING_ADC Self Calibration
-    if turning_adc_value < settings.TUNING_ADC_MIN:
-        settings.TUNING_ADC_MIN = turning_adc_value
-        #print("DEBUG: Calibration: New Min TUNING_ADC value", settings.TUNING_ADC_MIN)
-    if turning_adc_value > settings.TUNING_ADC_MAX:
-        settings.TUNING_ADC_MAX = turning_adc_value
-        #print("DEBUG: Calibration: New Max TUNING_ADC value", settings.TUNING_ADC_MAX)
-
-    TUNING_ADC_smoothed = settings.TUNING_ADC_SMOOTHING * turning_adc_value + (1 - settings.TUNING_ADC_SMOOTHING) * TUNING_ADC_smoothed
-    return TUNING_ADC_smoothed
+    return adc_0_value
 
 
 def check_volume_knob():
-    global volume_prev, volume_dead_zone, volume
+    global volume_prev, volume, volume_dead_zone
 
-    volume_setting = round(map_range(get_volume_adc(),settings.VOLUME_ADC_MIN, settings.VOLUME_ADC_MAX,0, 1), 3)
-
-    if volume_setting > volume_prev + volume_dead_zone or volume_setting < volume_prev - volume_dead_zone:
-        volume_prev = volume_setting
-        volume = volume_setting
+    # Get the raw volume setting from the potentiometer
+    volume = round(map_range(get_volume_adc(), settings.VOLUME_ADC_MIN, settings.VOLUME_ADC_MAX, 0, 1), 3)
+    
+    # Only send an update if the change is significant
+    if abs(volume - volume_prev) > volume_dead_zone:
+        volume_prev = volume
         send_uart("V", str(volume))
         volume_dead_zone = settings.VOLUME_DEAD_ZONE
-        #print("DEBUG: Volume:",volume, VOLUME_ADC_smoothed, settings.VOLUME_ADC.value)
+        # print("DEBUG: Volume:", volume)
 
+class CircularBuffer:
+    def __init__(self, size):
+        self.size = size
+        self.buffer = [0] * size
+        self.index = 0
+        self.is_filled = False
+
+    def add(self, value):
+        self.buffer[self.index] = value
+        self.index = (self.index + 1) % self.size
+        if self.index == 0:
+            self.is_filled = True
+
+    def get_average(self):
+        if self.is_filled:
+            return sum(self.buffer) / self.size
+        else:
+            return sum(self.buffer[:self.index]) / max(1, self.index)
+
+# Initialize the circular buffer for UART smoothing
+uart_angle_buffer = CircularBuffer(size=settings.UART_BUFFER_SIZE)  # Adjust size for UART smoothing
+
+
+def get_tuning_adc():
+    tuning_adc_value = settings.TUNING_ADC.value
+
+    # TUNING_ADC Self Calibration
+    settings.TUNING_ADC_MIN = min(settings.TUNING_ADC_MIN, tuning_adc_value)
+    settings.TUNING_ADC_MAX = max(settings.TUNING_ADC_MAX, tuning_adc_value)
+
+    return tuning_adc_value
 
 def check_tuning_knob():
     global motor_angle_prev, tuning_dead_zone
-    angle = round(map_range(get_tuning_adc(),settings.TUNING_ADC_MIN, settings.TUNING_ADC_MAX,settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX), 1)
-    if angle > motor_angle_prev + tuning_dead_zone or angle < motor_angle_prev - tuning_dead_zone:
+
+    # Get the raw angle value from the potentiometer
+    raw_angle = map_range(get_tuning_adc(), settings.TUNING_ADC_MIN, settings.TUNING_ADC_MAX, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
+    angle = round(raw_angle, 1)
+
+    # Update the motor angle directly if the change is significant
+    if abs(angle - motor_angle_prev) > tuning_dead_zone:
         motor_angle_prev = angle
         set_motor(angle)
-        tuning_dead_zone = settings.TUNING_DEAD_ZONE # Reset the deadzone upon manual knob movement.
-        #print("DEBUG: Tuning:",angle)
+        tuning_dead_zone = settings.TUNING_DEAD_ZONE
+        motor_angle_prev = angle
 
+    # For UART communication, add the angle to the buffer
+    uart_angle_buffer.add(angle)
+
+    # Check if the smoothed angle for UART communication has changed significantly
+    smoothed_uart_angle = round(uart_angle_buffer.get_average(), 1)
+    if abs(smoothed_uart_angle - motor_angle_prev) > tuning_dead_zone:
+        send_uart("M", str(smoothed_uart_angle))  # Send the smoothed angle over UART
 
 def resume_from_standby():
     global on_off_state
@@ -261,6 +284,7 @@ def resume_from_standby():
         settings.buttons.events.clear()
         settings.switches.events.clear()
         on_off_state = True
+
     send_uart("P", "1")
 
 
@@ -278,7 +302,7 @@ def sweep(restore_angle):
     set_pixels(off=True)
     button_hold = True
     for brightness in range(settings.NEOPIXEL_RANGE):
-        angle = map_range(brightness, 0, settings.NEOPIXEL_RANGE, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
+        angle = round(map_range(brightness, 0, settings.NEOPIXEL_RANGE, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX),0)
         set_motor(angle)
         set_pixels(brightness / settings.NEOPIXEL_RANGE)
         #print("DEBUG: sweep:", angle, brightness)

@@ -61,17 +61,16 @@ TUNING_ADC_MIN = 1024 # Deliberately high to allow for self-calibration
 TUNING_ADC_MAX = 2048 # Deliberately low to allow for self-calibration
 VOLUME_ADC = analogio.AnalogIn(board.A0) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
 TUNING_ADC = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer for the tuning control.
-VOLUME_ADC_SMOOTHING = 0.6  # Float between 0 and 1. Lower means more smoothing, prevents lots of changes due to potentiometer noise, slows response
-TUNING_ADC_SMOOTHING = 0.5  # Float between 0 and 1. Lower means more smoothing, prevents lots of changes due to potentiometer noise, slows response
 
 # Float angle, angle has to change by more than this before the needle moves.
 # Numbers great than 1 make for jumpy needle movement.
 # Is overwritten when digital tuning to prevent ADC noise from changing the result.
-TUNING_DEAD_ZONE = 0.3 # Angle
+TUNING_DEAD_ZONE = 0.5 # Angle to ensure the motor doesn't trigger due to ADC noise
 DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally tuned.
+UART_BUFFER_SIZE = 6 # Larger number means more smoothing, but also lag
 
 #Volume settings related to remote control
-VOLUME_DEAD_ZONE = 0.05 # Float 0-1
+VOLUME_DEAD_ZONE = 0.015 # Float 0-1 Adjust if the volume is contantly changing
 DIGITAL_VOLUME_DEAD_ZONE = 0.1
 DIGITAL_VOLUME_INCREMENT = 0.13
 
