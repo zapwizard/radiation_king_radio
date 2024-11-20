@@ -65,9 +65,10 @@ TUNING_ADC = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer 
 # Float angle, angle has to change by more than this before the needle moves.
 # Numbers great than 1 make for jumpy needle movement.
 # Is overwritten when digital tuning to prevent ADC noise from changing the result.
-TUNING_DEAD_ZONE = 0.5 # Angle to ensure the motor doesn't trigger due to ADC noise
+TUNING_DEAD_ZONE = 1 # Angle to ensure the motor doesn't trigger due to ADC noise
 DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally tuned.
 UART_BUFFER_SIZE = 6 # Larger number means more smoothing, but also lag
+UART_SEND_INTERVAL = 0.1 # Prevent flooding the UART with commands
 
 #Volume settings related to remote control
 VOLUME_DEAD_ZONE = 0.015 # Float 0-1 Adjust if the volume is contantly changing

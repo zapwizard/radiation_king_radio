@@ -52,7 +52,7 @@ BAND_CALLOUT_VOLUME = 1 # Float: How loud the audible band callouts changing sou
 BAND_CALLOUT_WAIT = True # Whether or not to wait for the bang callout file to finish before switching the band
 EFFECTS_VOLUME = 0.6 # How loud the on/off and other sound effects are played
 TIME_ZONE = 'US/Central'
-END_ZONE = 10 # Angle: How close should the stations get to the ends of the dial
+END_ZONE = 16 # Angle: How close should the stations get to the ends of the dial
 
 # Air Core Motor Related:
 MOTOR_MIN_ANGLE = 14 # This must match the numbers in pico_settings.py

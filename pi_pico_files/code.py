@@ -209,19 +209,27 @@ def get_volume_adc():
 
     return adc_0_value
 
+last_volume_uart_send_time = 0
 
 def check_volume_knob():
-    global volume_prev, volume, volume_dead_zone
+    global volume_prev, volume, volume_dead_zone, last_volume_uart_send_time
 
     # Get the raw volume setting from the potentiometer
     volume = round(map_range(get_volume_adc(), settings.VOLUME_ADC_MIN, settings.VOLUME_ADC_MAX, 0, 1), 3)
-    
-    # Only send an update if the change is significant
+
+    # Check if the volume change is significant
     if abs(volume - volume_prev) > volume_dead_zone:
-        volume_prev = volume
-        send_uart("V", str(volume))
-        volume_dead_zone = settings.VOLUME_DEAD_ZONE
-        # print("DEBUG: Volume:", volume)
+        # Get the current time
+        current_time = time.monotonic()
+
+        # Check if enough time has passed since the last UART command was sent
+        if current_time - last_volume_uart_send_time > settings.UART_SEND_INTERVAL:
+            # Send the volume over UART
+            volume_prev = volume
+            send_uart("V", str(volume))
+            last_volume_uart_send_time = current_time  # Update the last send time
+            volume_dead_zone = settings.VOLUME_DEAD_ZONE
+            # print("DEBUG: Volume:", volume)
 
 class CircularBuffer:
     def __init__(self, size):
@@ -255,27 +263,38 @@ def get_tuning_adc():
 
     return tuning_adc_value
 
+# Initialize last sent time for UART communication
+last_uart_send_time = 0
+
+
 def check_tuning_knob():
-    global motor_angle_prev, tuning_dead_zone
+    global motor_angle_prev, tuning_dead_zone, last_uart_send_time
 
     # Get the raw angle value from the potentiometer
     raw_angle = map_range(get_tuning_adc(), settings.TUNING_ADC_MIN, settings.TUNING_ADC_MAX, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
     angle = round(raw_angle, 1)
 
-    # Update the motor angle directly if the change is significant
+    # Update the motor angle directly for smooth movement
     if abs(angle - motor_angle_prev) > tuning_dead_zone:
         motor_angle_prev = angle
-        set_motor(angle)
+        set_motor(angle)  # Set motor with precise angle for smooth operation
         tuning_dead_zone = settings.TUNING_DEAD_ZONE
-        motor_angle_prev = angle
 
     # For UART communication, add the angle to the buffer
     uart_angle_buffer.add(angle)
 
-    # Check if the smoothed angle for UART communication has changed significantly
-    smoothed_uart_angle = round(uart_angle_buffer.get_average(), 1)
-    if abs(smoothed_uart_angle - motor_angle_prev) > tuning_dead_zone:
-        send_uart("M", str(smoothed_uart_angle))  # Send the smoothed angle over UART
+    # Get the current time
+    current_time = time.monotonic()
+
+    # Check if enough time has passed since the last UART command was sent
+    if current_time - last_uart_send_time > settings.UART_SEND_INTERVAL:
+        # Send the smoothed angle over UART if it has changed significantly
+        smoothed_uart_angle = round(uart_angle_buffer.get_average(), 1)
+        if abs(smoothed_uart_angle - motor_angle_prev) > tuning_dead_zone:
+            send_uart("M", str(smoothed_uart_angle))
+            last_uart_send_time = current_time  # Update the last send time
+            #print("Debug: Sent motor command", smoothed_uart_angle)
+
 
 def resume_from_standby():
     global on_off_state
@@ -284,8 +303,10 @@ def resume_from_standby():
         settings.buttons.events.clear()
         settings.switches.events.clear()
         on_off_state = True
-
-    send_uart("P", "1")
+        send_uart("P", "1")
+        for brightness in range(0, settings.NEOPIXEL_RANGE, 1):
+            set_pixels(brightness / settings.NEOPIXEL_RANGE)
+            time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
 
 
 def standby():
