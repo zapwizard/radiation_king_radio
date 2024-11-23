@@ -17,11 +17,17 @@ SWEEP_DELAY = 0.002 # The speed at which the dial sweeps across the range
 UART_HEARTBEAT_INTERVAL = 3
 PI_ZERO_HEARTBEAT_TIMEOUT = 30 # must be greater than the heartbeat interval on pi zero
 UART_TIMEOUT = 0.1
+UART_BUFFER_SIZE = 6 # Larger number means more smoothing, but also lag
+UART_SEND_INTERVAL = 0.05 # Prevent flooding the UART with commands
+
 
 #LED related:
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
 LED_HEARTBEAT_INTERVAL = 1
+SOFT_STOP_DURATION = 1.5  # Duration in seconds
+SOFT_START_DURATION = 1.5  # Duration in seconds
+FADE_MIN_STEPS = 50
 
 #Pi Zero Reset switch
 pi_zero_reset = digitalio.DigitalInOut(board.GP22)
@@ -55,9 +61,9 @@ aux_pixels.fill((0, 0, 0, 0))
 
 
 # ADC related:
-VOLUME_ADC_MIN = 1024 # Deliberately high to allow for self-calibration
+VOLUME_ADC_MIN = 1920 # Deliberately high to allow for self-calibration
 VOLUME_ADC_MAX = 2048 # Deliberately low to allow for self-calibration
-TUNING_ADC_MIN = 1024 # Deliberately high to allow for self-calibration
+TUNING_ADC_MIN = 1920 # Deliberately high to allow for self-calibration
 TUNING_ADC_MAX = 2048 # Deliberately low to allow for self-calibration
 VOLUME_ADC = analogio.AnalogIn(board.A0) # I recommend using a switched "Audio" or logarithmic potentiometer for the volume control
 TUNING_ADC = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer for the tuning control.
@@ -65,10 +71,9 @@ TUNING_ADC = analogio.AnalogIn(board.A1)  # Use a switched linear potentiometer 
 # Float angle, angle has to change by more than this before the needle moves.
 # Numbers great than 1 make for jumpy needle movement.
 # Is overwritten when digital tuning to prevent ADC noise from changing the result.
-TUNING_DEAD_ZONE = 1 # Angle to ensure the motor doesn't trigger due to ADC noise
-DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally tuned.
-UART_BUFFER_SIZE = 6 # Larger number means more smoothing, but also lag
-UART_SEND_INTERVAL = 0.1 # Prevent flooding the UART with commands
+TUNING_DEAD_ZONE = 0.5 # Angle to ensure the motor doesn't trigger due to ADC noise
+DIGITAL_TUNING_DEAD_ZONE = 5 # This is used if the station has been digitally or manually tuned.
+
 
 #Volume settings related to remote control
 VOLUME_DEAD_ZONE = 0.015 # Float 0-1 Adjust if the volume is contantly changing

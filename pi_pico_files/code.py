@@ -25,6 +25,7 @@ tuning_switch_state = True
 
 #Motor related:
 motor_angle = 0
+start_angle = 0
 
 #Misc
 on_off_state = False
@@ -35,7 +36,7 @@ pi_zero_heartbeat_time = 0
 usb_cdc.console.timeout = settings.UART_TIMEOUT
 usb_cdc.data.timeout = settings.UART_TIMEOUT
 uart_line = None
-brightness_smoothed = 0
+brightness_smoothed = 1
 button_hold = False # prevent button input
 
 def receive_uart():
@@ -70,16 +71,17 @@ def send_uart(command_type, data1, data2 = "", data3 = "", data4 = ""):
         #        send_uart("I", *args, **kwargs)
 
 
-def set_motor(angle, disable = False, from_uart = False):  # Set angle in degrees
-    global motor_angle
+def set_motor(angle, disable = False, manual = False):  # Set angle in degrees
+    global motor_angle, tuning_dead_zone
 
-    if angle != motor_angle: # if the angle changed:
+    if manual:
+        tuning_dead_zone = settings.DIGITAL_TUNING_DEAD_ZONE
+
+    if angle != motor_angle or manual: # if the angle changed:
         motor_angle = angle
 
         # Keep needle within the preset limits
         angle = constrain(angle, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
-        #if not from_uart:
-        #    send_uart("M", str(angle))  # Send angle up to the Pi Zero
 
         radian = angle * 0.0174  # Convert the angle to a radian (math below only works on radians)
         sin_radian = math.sin(radian)  # Calculate sin
@@ -124,7 +126,7 @@ def set_motor(angle, disable = False, from_uart = False):  # Set angle in degree
                 settings.COS_NEG.value = False
 
     if disable:
-        time.sleep(0.2)
+        time.sleep(0.1)
         settings.SIN_PWM.duty_cycle = 0
         settings.SIN_POS.value = False
         settings.SIN_NEG.value = False
@@ -264,96 +266,79 @@ def get_tuning_adc():
     return tuning_adc_value
 
 # Initialize last sent time for UART communication
-last_uart_send_time = 0
-
+last_uart_send_time = 0  # Or time.monotonic() if needed
+motor_angle_prev = settings.MOTOR_ANGLE_MIN
+last_uart_angle = settings.MOTOR_ANGLE_MIN
 
 def check_tuning_knob():
-    global motor_angle_prev, tuning_dead_zone, last_uart_send_time
+    global motor_angle_prev, tuning_dead_zone, last_uart_send_time, last_uart_angle
 
     # Get the raw angle value from the potentiometer
-    raw_angle = map_range(get_tuning_adc(), settings.TUNING_ADC_MIN, settings.TUNING_ADC_MAX, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX)
+    raw_angle = map_range(
+        get_tuning_adc(),
+        settings.TUNING_ADC_MIN,
+        settings.TUNING_ADC_MAX,
+        settings.MOTOR_ANGLE_MIN,
+        settings.MOTOR_ANGLE_MAX,
+    )
     angle = round(raw_angle, 1)
 
-    # Update the motor angle directly for smooth movement
+    # Update motor angle if it exceeds the dead zone threshold
     if abs(angle - motor_angle_prev) > tuning_dead_zone:
+        tuning_dead_zone = settings.TUNING_DEAD_ZONE # reset the deadzone if the knob is moved
         motor_angle_prev = angle
-        set_motor(angle)  # Set motor with precise angle for smooth operation
-        tuning_dead_zone = settings.TUNING_DEAD_ZONE
+        set_motor(angle)  # Update motor position
+        #print(f"Debug: Motor updated to angle {angle}")
 
-    # For UART communication, add the angle to the buffer
+    # Add the angle to the smoothing buffer
     uart_angle_buffer.add(angle)
 
     # Get the current time
     current_time = time.monotonic()
 
-    # Check if enough time has passed since the last UART command was sent
+    # Send smoothed angle over UART if conditions are met
     if current_time - last_uart_send_time > settings.UART_SEND_INTERVAL:
-        # Send the smoothed angle over UART if it has changed significantly
         smoothed_uart_angle = round(uart_angle_buffer.get_average(), 1)
-        if abs(smoothed_uart_angle - motor_angle_prev) > tuning_dead_zone:
+        if abs(smoothed_uart_angle - last_uart_angle) > tuning_dead_zone:
             send_uart("M", str(smoothed_uart_angle))
-            last_uart_send_time = current_time  # Update the last send time
-            #print("Debug: Sent motor command", smoothed_uart_angle)
+            last_uart_angle = smoothed_uart_angle  # Track last sent angle
+            last_uart_send_time = current_time  # Update send timestamp
+            #print(f"Debug: Sent motor command {smoothed_uart_angle}")
 
 
-def resume_from_standby():
-    global on_off_state
-    if not on_off_state:
-        print("STATE: Resume from standby")
-        settings.buttons.events.clear()
-        settings.switches.events.clear()
-        on_off_state = True
-        send_uart("P", "1")
-        for brightness in range(0, settings.NEOPIXEL_RANGE, 1):
-            set_pixels(brightness / settings.NEOPIXEL_RANGE)
-            time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
 
 
-def standby():
-    global on_off_state
-    if on_off_state:
-        print("STATE: Going into standby")
-        on_off_state = False
-        send_uart("P", "0")
-        soft_stop()
 
 
-def sweep(restore_angle):
-    global button_hold
-    set_pixels(off=True)
-    button_hold = True
-    for brightness in range(settings.NEOPIXEL_RANGE):
-        angle = round(map_range(brightness, 0, settings.NEOPIXEL_RANGE, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX),0)
-        set_motor(angle)
-        set_pixels(brightness / settings.NEOPIXEL_RANGE)
-        #print("DEBUG: sweep:", angle, brightness)
-        time.sleep(settings.SWEEP_DELAY)
-    if restore_angle:
-        print("STATE: Sweep with restore_angle=", restore_angle)
-        set_motor(restore_angle)
-    button_hold = False
+def wait_for_uart_ack(expected_ack, timeout=5):
+    """
+    Wait for a specific acknowledgment message over UART with a timeout.
 
+    Args:
+        expected_ack (str): The acknowledgment message to wait for.
+        timeout (int): Time in seconds to wait before giving up.
 
-def soft_stop():
-    global motor_angle
+    Returns:
+        bool: True if acknowledgment is received, False otherwise.
+    """
+    import time
 
-    if motor_angle < settings.MOTOR_MID_POINT:
-        for angle in range(round(motor_angle), round(settings.MOTOR_MID_POINT)):
-            set_motor(angle)
-            time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
-    else:
-        for angle in range(round(motor_angle), round(settings.MOTOR_MID_POINT), -1):
-            set_motor(angle)
-            time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
-    for brightness in range(settings.NEOPIXEL_RANGE, 0, -1):
-        set_pixels(brightness / settings.NEOPIXEL_RANGE)
-        time.sleep(settings.NEOPIXEL_DIM_INTERVAL)
-    set_pixels(off=True)
-    set_motor(settings.MOTOR_MID_POINT, disable = True)
+    start_time = time.monotonic()
+    while (time.monotonic() - start_time) < timeout:
+        try:
+            if usb_cdc.data.in_waiting > 0:  # Check if data is available
+                response = usb_cdc.data.read(usb_cdc.data.in_waiting).decode().strip()
+                print(f"DEBUG: Received UART response: {response}")
+                if expected_ack in response:
+                    return True
+        except Exception as e:
+            print(f"ERROR: UART read failed in wait_for_uart_ack: {e}")
+        time.sleep(0.1)  # Avoid busy-waiting
+    return False
 
 
 def set_pixels(brightness=None, pixel=None, off=False, channel=None):
-    if off and not channel:
+    if off and not channel or brightness <= 0:
         settings.gauge_pixels.fill((0, 0 ,0, 0))
         settings.aux_pixels.fill((0, 0, 0, 0))
         return
@@ -385,6 +370,150 @@ def set_pixels(brightness=None, pixel=None, off=False, channel=None):
     else:
         settings.gauge_pixels.fill(settings.GAUGE_PIXEL_COLOR)
         settings.aux_pixels.fill(settings.AUX_PIXEL_COLOR)
+
+
+def sweep(restore_angle):
+    global button_hold
+    set_pixels(off=True)
+    button_hold = True
+    for brightness in range(settings.NEOPIXEL_RANGE):
+        angle = round(map_range(brightness, 0, settings.NEOPIXEL_RANGE, settings.MOTOR_ANGLE_MIN, settings.MOTOR_ANGLE_MAX),0)
+        set_motor(angle)
+        set_pixels(brightness / settings.NEOPIXEL_RANGE)
+        #print("DEBUG: sweep:", angle, brightness)
+        time.sleep(settings.SWEEP_DELAY)
+    if restore_angle:
+        print("STATE: Sweep with restore_angle=", restore_angle)
+        set_motor(restore_angle)
+    button_hold = False
+
+def interpolate_values(start, end, total_steps):
+    """Interpolate values between start and end over total_steps."""
+    if total_steps <= 1:
+        return [start]
+    return [start + (end - start) * (i / (total_steps - 1)) for i in range(total_steps)]
+
+
+
+def update_motor_and_leds(start_position, end_position, start_brightness, end_brightness, total_duration):
+    """Update motor and LEDs smoothly over the given duration."""
+    # Minimum reliable step duration
+    min_step_duration = 0.008  # Minimum step time in seconds
+
+    # Calculate total steps and step delay
+    max_steps = max(1, int(total_duration / min_step_duration))  # At least 1 step
+    step_delay = total_duration / max_steps
+
+    # Interpolate motor positions and brightness values
+    motor_positions = interpolate_values(start_position, end_position, max_steps)
+    brightness_values = interpolate_values(start_brightness, end_brightness, max_steps)
+
+    #print(f"DEBUG: total_steps={max_steps}, step_delay={step_delay:.4f}s")
+
+    start_time = time.monotonic()
+    for step in range(max_steps):
+        step_start_time = time.monotonic()
+
+        # Update motor position
+        set_motor(motor_positions[step])
+
+        # Update LED brightness
+        brightness = brightness_values[step]
+        set_pixels(brightness=brightness / settings.NEOPIXEL_RANGE)
+
+        # Calculate remaining time for this step
+        elapsed_time = time.monotonic() - step_start_time
+        remaining_time = step_delay - elapsed_time
+        if remaining_time > 0:
+            time.sleep(remaining_time)
+
+        # Debugging: Log step duration
+        step_duration = time.monotonic() - step_start_time
+        #print(f"Step {step + 1}: Duration={step_duration:.6f}s")
+
+    total_elapsed_time = time.monotonic() - start_time
+    #print(f"Total elapsed time: {total_elapsed_time:.6f}s (Expected: {total_duration:.6f}s)")
+
+
+def soft_start():
+    global motor_angle, start_angle
+
+    print("Soft start initiated...")
+
+    # Start from MOTOR_MID_POINT and move to stored start_angle
+    mid_point = settings.MOTOR_MID_POINT
+    target_angle = start_angle
+
+    # Gradually increase motor position and LEDs
+    update_motor_and_leds(
+        start_position=mid_point,
+        end_position=target_angle,
+        start_brightness=0,
+        end_brightness=settings.NEOPIXEL_RANGE,
+        total_duration=settings.SOFT_START_DURATION
+    )
+
+    print("Soft start completed.")
+
+
+
+def soft_stop():
+    global motor_angle, brightness_smoothed, start_angle
+
+    print("Soft stop initiated...")
+
+    # Store the current motor angle as start_angle
+    start_angle = motor_angle
+    mid_point = settings.MOTOR_MID_POINT
+
+    # Gradually move motor and dim LEDs
+    update_motor_and_leds(
+        start_position=start_angle,
+        end_position=mid_point,
+        start_brightness=round(brightness_smoothed * settings.NEOPIXEL_RANGE),
+        end_brightness=0,
+        total_duration=settings.SOFT_STOP_DURATION
+    )
+
+    # Ensure LEDs are fully off and motor is at the midpoint
+    set_pixels(off=True)
+    print("Neopixels turned off.")
+    set_motor(mid_point, disable=True)
+    print("Motor disabled at midpoint.")
+
+    print("Soft stop completed.")
+
+
+
+
+
+start_time = time.time()
+soft_start()
+print(f"Elapsed time: {time.time() - start_time:.2f} seconds")
+
+
+
+def resume_from_standby():
+    global on_off_state
+    if not on_off_state:
+        print("STATE: Resume from standby")
+        settings.buttons.events.clear()
+        settings.switches.events.clear()
+        on_off_state = True
+        send_uart("P", "1")
+        soft_start()
+
+
+def standby():
+    global on_off_state
+    if on_off_state:
+        print("STATE: Going into standby")
+        on_off_state = False
+        send_uart("P", "0")  # Notify the Pi Zero       
+        soft_stop()
+
+
+
 
 def wait_for_pi():
     global pi_state, pi_zero_heartbeat_time, uart_heartbeat_time, on_off_state
@@ -638,7 +767,7 @@ while True:
                 if len(uart_message) > 1 and uart_message[1]:
                     print("DEBUG: From Zero: New motor angle",uart_message[1])
                     tuning_dead_zone = settings.DIGITAL_TUNING_DEAD_ZONE
-                    set_motor(eval(uart_message[1]),from_uart = True)
+                    set_motor(eval(uart_message[1]),manual = True)
 
             #Other Commands
             if uart_message[0] == "C":

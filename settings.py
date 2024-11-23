@@ -21,6 +21,7 @@ ACTIONS = {
 #    17: "power_off",  # GPIO 17
 #}
 
+TICK = 200 #max loop speed (ticks per second)
 
 # To speed up the boot process: Song and station data caching is used
 # The code will try to detect if the song files change, but if it fails to do so
@@ -43,8 +44,8 @@ REWIND_INCREMENT = 5 # in seconds
 
 
 # Tuning related:
-TUNING_NEAR = 8 # Angle: Adjusts how near you need to be to hear a station in the static while turning
-TUNING_LOCK_ON = 4  # Angle: Adjusts how precise you need to be to land on a station (Higher = more accuracy required)
+TUNING_NEAR = 10 # Angle: Adjusts how near you need to be to hear a station in the static while turning
+TUNING_LOCK_ON = 3  # Angle: Adjusts how precise you need to be to land on a station (Higher = more accuracy required)
 BAND_CHANGE_VOLUME = 0.5 # Float: How loud the band changing sound effect is played (Multiplier of current volume)
 BAND_CALLOUT = True # Whether or not to make an audio callout when the band changes
 BAND_CALLOUT_FILE = "callout.ogg" # Name of the radio band callout file

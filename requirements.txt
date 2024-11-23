@@ -8,6 +8,8 @@ matplotlib
 PyGObject
 pyserial
 pyudev
+sounddevice
+soundfile
 schedule #https://pypi.org/project/schedule/
 
 #Neeeded for soft off via GPIO17:

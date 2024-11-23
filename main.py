@@ -27,8 +27,6 @@ from subprocess import call
 import re
 
 
-
-
 #Logging
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -89,7 +87,7 @@ try:
     print("Startup: Starting sound initialization")
 
     pygame.mixer.quit()
-    pygame.mixer.init(44100, -16, 2, 8192)
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=8192)    
     if not pygame.mixer.get_init():
         print("Error: Sound failed to initialize")
 except Exception as e:
@@ -143,25 +141,13 @@ snd_band = pygame.mixer.Sound(settings.SOUND_BAND_CHANGE)
 snd_error = pygame.mixer.Sound(settings.SOUND_ERROR)
 
 
-# Static sound related
-print("Startup: Loading static sounds (Ignore the underrun errors)")
-static_sounds = {}
-i = 0
-
-# Iterate through the sorted files in the directory
-for file in sorted(os.scandir(settings.STATIC_SOUNDS_FOLDER), key=lambda entry: entry.name):
-    if file.name.endswith(".ogg"):  # Use file.name to access the filename
-        static_sounds[i] = pygame.mixer.Sound(os.path.join("./", settings.STATIC_SOUNDS_FOLDER, file.name))
-        i += 1
-
-print("Info: Loaded", len(static_sounds), "static sound files")
-
 
 def set_motor(angle, manual = False):  # Tell the motor controller what angle to set, used for manual tuning
     global motor_angle, tuning_locked
     motor_angle = angle
     if manual:
         send_uart("M", motor_angle)
+    #print("DEBUG: set_motor, motor_angle=",motor_angle)
 
 
 def load_saved_settings():
@@ -498,77 +484,102 @@ def get_nearest_station(angle):
     return nearest_station
 
 
+
+# Static sound related
+print("Startup: Loading static sounds (Ignore the underrun errors)")
+static_playback_active = False
+static_sounds = {}
+i = 0
+
+# Iterate through the sorted files in the directory
+for file in sorted(os.scandir(settings.STATIC_SOUNDS_FOLDER), key=lambda entry: entry.name):
+    if file.name.endswith(".ogg"):  # Use file.name to access the filename
+        static_sounds[i] = pygame.mixer.Sound(os.path.join("./", settings.STATIC_SOUNDS_FOLDER, file.name))
+        i += 1
+
+print("Info: Loaded", len(static_sounds), "static sound files")
+
 # Play a random bit of static
-def play_static(play):
-    global static_sounds, volume
-    if play:
-        if not pygame.mixer.Channel(1).get_busy():
-            random_snd = random.randrange(0, len(static_sounds) - 1)
-            pygame.mixer.Channel(1).play(static_sounds[random_snd])
-            if volume > 0:
-                pygame.mixer.Channel(1).set_volume(
-                    max(round(volume * settings.STATIC_VOLUME, 3), settings.STATIC_VOLUME_MIN))
-            else:
-                pygame.mixer.Channel(1).set_volume(0)
-    else:
+def play_static(play=None):
+    global static_sounds, volume, static_playback_active
+
+    # Handle stop condition
+    if play is False:
         pygame.mixer.Channel(1).stop()
+        static_playback_active = False
+        return
+
+    # If static playback is disabled, do nothing
+    if not static_playback_active and play is None:
+        return
+
+    # Enable playback
+    if play is True:
+        static_playback_active = True
+
+    # Continue playback if already playing
+    if pygame.mixer.Channel(1).get_busy():
+        return
+
+    # Start or restart playback
+    if static_playback_active:
+        random_snd = random.randrange(0, len(static_sounds))
+        pygame.mixer.Channel(1).play(static_sounds[random_snd])
+        pygame.mixer.Channel(1).set_volume(
+            max(round(volume * settings.STATIC_VOLUME, 3), settings.STATIC_VOLUME_MIN)
+        )
+
 
 
 # Tune into a station based on the motor angle
 def tuning(manual=False):
-    global motor_angle, tuning_locked, tuning_prev_angle, active_station
-    
-    if manual: tuning_locked = False
+    global motor_angle, tuning_locked, tuning_prev_angle, station_num, active_station, static_playback_active
 
     if motor_angle == tuning_prev_angle and not manual:  # Do nothing if the angle is unchanged
         return
-    #print("DEBUG:tuning,motor_angle=",motor_angle)
 
-    nearest_station_num = get_nearest_station(motor_angle)
-    station_angle = get_station_pos(nearest_station_num)
-    range_to_station = abs(station_angle - motor_angle)
+    nearest_station_num = get_nearest_station(motor_angle)  # Find the nearest radio station to the needle position
+    station_angle = get_station_pos(nearest_station_num)  # Get the exact angle of the nearest station
+    range_to_station = abs(station_angle - motor_angle)  # Find the angular distance to nearest station
 
+    # Play at volume with no static when needle is close to station position
     if range_to_station <= settings.TUNING_LOCK_ON:
         if not tuning_locked:
-            lock_to_station(nearest_station_num)
+            tuning_volume = volume
+            select_station(nearest_station_num, False)
+            pygame.mixer.music.set_volume(volume)
+            play_static(False)  # Stop static playback
+            static_playback_active = False  # Ensure static remains stopped
+            tuning_locked = True
+
+    # Start playing audio with static when the needle gets near a station position
     elif range_to_station < settings.TUNING_NEAR:
-        adjust_tuning_volume(range_to_station)
+        tuning_volume = clamp(round(volume / range_to_station, 3), settings.VOLUME_MIN, 1)
+        pygame.mixer.music.set_volume(tuning_volume)
+
         if active_station:
-            play_static(True)
+            play_static(True)  # Play static with station audio
+            static_playback_active = True
             tuning_locked = False
         else:
             select_station(nearest_station_num, False)
+
+    # Stop any music and play just static if the needle is not near any station position
     else:
-        stop_station_playback()
-    
+        if active_station:
+            print("Tuning: No active station. Nearest station # is:", nearest_station_num,
+                  "at angle:", station_angle, "Needle=", motor_angle,
+                  "tuning_separation =", tuning_seperation)
+            active_station.stop()
+            pygame.mixer.music.stop()
+            active_station = None
+            # station_num = None  # Uncomment if you want to clear the station_num
+        play_static(True)  # Play only static
+        static_playback_active = True
+        tuning_locked = False
+
     tuning_prev_angle = motor_angle
 
-# Helper function to lock to a station
-def lock_to_station(nearest_station_num):
-    global tuning_locked, volume
-    tuning_volume = volume
-    select_station(nearest_station_num, False)
-    pygame.mixer.music.set_volume(volume)
-    play_static(False)
-    tuning_locked = True
-    #print("DEBUG:lock_to_station:",nearest_station_num)
-
-# Helper function to adjust the tuning volume based on proximity
-def adjust_tuning_volume(range_to_station):
-    tuning_volume = clamp(round(volume / range_to_station, 3), settings.VOLUME_MIN, 1)
-    pygame.mixer.music.set_volume(tuning_volume)
-    
-
-# Helper function to stop station playback and play static
-def stop_station_playback():
-    global active_station, station_num, tuning_locked
-    if active_station:
-        active_station.stop()
-        #pygame.mixer.music.stop()
-        active_station = None
-        station_num = None
-        tuning_locked = False
-        play_static(True)
 
 def next_station():
     global station_num, total_station_num
@@ -801,25 +812,46 @@ def shutdown_zero():
     print("Info: Doing a full shutdown")
     call("sudo nohup shutdown -h now", shell=True)
 
-def send_uart(command_type, data1, data2="", data3="", data4=""):
-    #print(f"DEBUG: send_uart called with command_type={command_type}, data1={data1}, data2={data2}, data3={data3}, data4={data4}")
-    # Debug each argument to see if they are of valid types
-    #if not all(isinstance(arg, (str, bytes, os.PathLike, bool, int, float)) for arg in [data1, data2, data3, data4]):
-    #    print("ERROR: One of the data arguments is an unsupported type. Arguments must be str, bytes, os.PathLike, bool, int, or float.")
-    #    raise TypeError("Invalid type passed to send_uart")
-    # Convert booleans if necessary
-    #data1 = "1" if data1 is True else ("0" if data1 is False else str(data1))
-    #data2 = "1" if data2 is True else ("0" if data2 is False else str(data2))
-    #data3 = "1" if data3 is True else ("0" if data3 is False else str(data3))
-    #data4 = "1" if data4 is True else ("0" if data4 is False else str(data4))
-    # Proceed to write the UART message
-    if setup.uart:
-        try:
-            message = f"{command_type},{data1},{data2},{data3},{data4},\n"
-            setup.uart.write(bytes(message, "utf-8"))
-        except Exception as error:
-            _, err, _ = sys.exc_info()
-            print("ERROR: UART Output: (%s)" % err, error)
+def send_uart(command_type, data1, data2="", data3="", data4="", timeout=1.0):
+    """
+    Sends a UART message with a timeout.
+    Args:
+        command_type: The command type.
+        data1, data2, data3, data4: Additional data fields for the message.
+        timeout: Maximum duration (in seconds) to attempt the send.
+    """
+    if not setup.uart:
+        print("Error: UART not initialized. Skipping send_uart.")
+        return
+
+    try:
+        # Construct the message
+        message = f"{command_type},{data1},{data2},{data3},{data4},\n"
+        message_bytes = bytes(message, "utf-8")
+
+        # Attempt to write to the UART with a timeout
+        start_time = time.monotonic()
+        while time.monotonic() - start_time < timeout:
+            try:
+                setup.uart.write(message_bytes)
+                #print(f"DEBUG: UART message sent: {message.strip()}")
+                return  # Successfully sent the message
+            except serial.SerialTimeoutException:
+                print("Error: UART write timed out.")
+                break  # Exit if the write times out
+            except OSError as e:
+                print(f"Warning: Transient UART write error: {e}")
+                time.sleep(0.1)  # Short delay before retrying
+            except Exception as e:
+                print(f"Error: UART send failed with unexpected error: {e}")
+                break  # Exit on unexpected errors
+
+        print(f"Timeout: Failed to send UART message within {timeout} seconds.")
+    except Exception as error:
+        _, err, _ = sys.exc_info()
+        print(f"ERROR: UART Output: ({err}) {error}")
+
+
 
 def receive_uart():
     if not setup.uart:
@@ -937,7 +969,7 @@ def handle_motor_message(uart_message):
     try:
         motor_angle = float(uart_message[1])
         set_motor(motor_angle)
-        #print("DEBUG: handle_motor_message, motor_angle=",motor_angle)
+        #nordprint("DEBUG: handle_motor_message, motor_angle=",motor_angle)
     except (IndexError, ValueError) as error:
         print("Motor Error:", str(error))
 
@@ -1011,6 +1043,11 @@ def run():
         select_band(0, get_station_pos(0))
 
     print("****** Radiation King Radio is now running ******")
+    
+    # Variables for loop speed measurement
+    # loop_counter = 0
+    # last_report_time = time.time()
+    
     try:
         while True:
             now = time.time()
@@ -1042,17 +1079,27 @@ def run():
             # GPIO and tuning logic
             if setup.gpio_available:
                 check_gpio_input()
-                
+
             # Radio tuning
             if on_off_state:
                 tuning()
+                play_static()
 
             # Send heartbeat to Pico if necessary
             if now - heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
                 send_uart("H", "Zero")
                 heartbeat_time = now
 
-            #clock.tick(200)
+            # # Measure loop speed
+            # loop_counter += 1
+            # if now - last_report_time >= 1.0:  # Check if a second has passed
+                # loop_speed = loop_counter / (now - last_report_time)  # Calculate loops per second
+                # print(f"Loop Speed: {loop_speed:.2f} loops per second")  # Report loop speed
+                # loop_counter = 0  # Reset counter
+                # last_report_time = now  # Update report time
+
+            # Maintain consistent loop rate (adjust as needed)
+            clock.tick(settings.TICK)
     except KeyboardInterrupt:
         print("KeyboardInterrupt received, exiting...")
         exit_script()  # Call cleanup function
@@ -1354,17 +1401,45 @@ def save_settings():
         saved_ini.write(configfile)
     print("Info: Saved settings: volume: %s, station %s, band %s" % (volume, station_num, radio_band))
 
+
+
+
 def shutdown_sequence():
+    if not hasattr(setup, 'uart') or setup.uart is None:
+        print("Error: UART not initialized. Exiting shutdown sequence.")
+        return
+
+    # Save settings and clean up
     save_settings()
     pygame.mixer.quit()
     pygame.time.set_timer(settings.EVENTS['BLINK'], 0)
-    send_uart("I", "Pi Zero Shutdown")
-    send_uart("P", "0")  # Tell the Pi Pico we are going to sleep
-    if setup.uart:
-        setup.uart.close()  # Close port
+
+    print("DEBUG: shutdown_sequence, Telling Pico to shutdown via UART")
+
+    # Inform the Pi Pico about shutdown
+    send_uart("I", "Pi Zero Shutdown", timeout=1.0)
+    send_uart("P", "0", timeout=1.0)  # Tell the Pi Pico we are going to sleep
+
+    print("DEBUG: shutdown_sequence, Closing UART")
+    # Safely close UART
+    try:
+        if setup.uart:
+            setup.uart.close()
+            print("UART closed.")
+    except Exception as e:
+        print(f"Error closing UART: {e}")
+
+    print("DEBUG: shutdown_sequence, Unmounting the Pico")
+    # Unmount the Pico if mounted
     if hasattr(setup, 'device_name') and setup.device_name:
-        setup.mount.unmount(setup.mount.get_media_path(settings.PICO_FOLDER_NAME))
+        try:
+            setup.mount.unmount(setup.mount.get_media_path(settings.PICO_FOLDER_NAME))
+        except Exception as e:
+            print(f"Error unmounting Pico: {e}")
+
     print("Action: Exiting")
+
+
 
 # Register atexit to ensure clean-up on normal exit
 @atexit.register
