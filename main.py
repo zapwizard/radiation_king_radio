@@ -562,30 +562,33 @@ def play_static(play=None):
 
 
 
-# Tune into a station based on the motor angle
 def tuning(manual=False):
     global motor_angle, tuning_locked, tuning_prev_angle, station_num, active_station, static_playback_active
 
-    if motor_angle == tuning_prev_angle and not manual:  # Do nothing if the angle is unchanged
+    # Skip if the angle hasn't changed and it's not a manual tuning
+    if motor_angle == tuning_prev_angle and not manual:
         return
+
+    # Unlock tuning if it's manual tuning
     if manual:
         tuning_locked = False
 
-    nearest_station_num = get_nearest_station(motor_angle)  # Find the nearest radio station to the needle position
-    station_angle = get_station_pos(nearest_station_num)  # Get the exact angle of the nearest station
-    range_to_station = abs(station_angle - motor_angle)  # Find the angular distance to nearest station
+    # Find the nearest station based on the current motor angle
+    nearest_station_num = get_nearest_station(motor_angle)
+    station_angle = get_station_pos(nearest_station_num)
+    range_to_station = abs(station_angle - motor_angle)  # Angular distance to nearest station
 
-    # Play at volume with no static when needle is close to station position
+    # Check if we're close enough to lock onto the station
     if range_to_station <= settings.TUNING_SETTINGS["lock_on"]:
         if not tuning_locked:
-            tuning_volume = volume
+            tuning_locked = True
+            tuning_volume = volume  # Set volume to normal
             select_station(nearest_station_num, False)
             pygame.mixer.music.set_volume(volume)
             play_static(False)  # Stop static playback
             static_playback_active = False  # Ensure static remains stopped
-            tuning_locked = True
 
-    # Start playing audio with static when the needle gets near a station position
+    # Check if we're close to a station (but not locked)
     elif range_to_station < settings.TUNING_SETTINGS["near"]:
         tuning_volume = clamp(round(volume / range_to_station, 3), settings.VOLUME_SETTINGS["min"], 1)
         pygame.mixer.music.set_volume(tuning_volume)
@@ -597,21 +600,22 @@ def tuning(manual=False):
         else:
             select_station(nearest_station_num, False)
 
-    # Stop any music and play just static if the needle is not near any station position
+    # If not near any station, play only static
     else:
         if active_station:
-            print("Tuning: No active station. Nearest station # is:", nearest_station_num,
-                  "at angle:", station_angle, "Needle=", motor_angle,
-                  "tuning_separation =", tuning_seperation)
+            print(f"Tuning: No active station. Nearest station: #{nearest_station_num}, Angle: {station_angle}, Needle: {motor_angle}, Separation: {tuning_seperation}")
             active_station.stop()
             pygame.mixer.music.stop()
             active_station = None
             station_num = None
+
         play_static(True)  # Play only static
         static_playback_active = True
         tuning_locked = False
 
+    # Update the previous angle for the next tuning cycle
     tuning_prev_angle = motor_angle
+
 
 
 def next_station():

@@ -25,7 +25,7 @@ tuning_switch_state = True
 
 #Motor related:
 motor_angle = 0
-start_angle = 0
+saved_angle = 0
 
 #Misc
 on_off_state = False
@@ -395,7 +395,7 @@ def interpolate_values(start, end, total_steps):
 
 
 
-def update_motor_and_leds(start_position, end_position, start_brightness, end_brightness, total_duration):
+def update_motor_and_leds(start_angle, end_angle, start_brightness, end_brightness, total_duration):
     """Update motor and LEDs smoothly over the given duration."""
     # Minimum reliable step duration
     min_step_duration = 0.008  # Minimum step time in seconds
@@ -405,7 +405,7 @@ def update_motor_and_leds(start_position, end_position, start_brightness, end_br
     step_delay = total_duration / max_steps
 
     # Interpolate motor positions and brightness values
-    motor_positions = interpolate_values(start_position, end_position, max_steps)
+    motor_positions = interpolate_values(start_angle, end_angle, max_steps)
     brightness_values = interpolate_values(start_brightness, end_brightness, max_steps)
 
     #print(f"DEBUG: total_steps={max_steps}, step_delay={step_delay:.4f}s")
@@ -436,31 +436,30 @@ def update_motor_and_leds(start_position, end_position, start_brightness, end_br
 
 
 def soft_start():
-    global motor_angle, start_angle
+    global motor_angle, saved_angle
 
     print("Soft start initiated...")
 
     # Gradually increase motor position and LEDs
     update_motor_and_leds(
-        start_position=settings.MOTOR_MID_POINT,
-        end_position=start_angle,
+        start_angle=settings.MOTOR_MID_POINT,
+        end_angle=saved_angle,
         start_brightness=0,
         end_brightness=settings.NEOPIXEL_RANGE,
         total_duration=settings.SOFT_START_DURATION
     )
-
     print("Soft start completed.")
 
 def soft_stop():
-    global motor_angle, brightness_smoothed, start_angle
+    global motor_angle, brightness_smoothed, saved_angle
 
     print("Soft stop initiated...")
-
+    saved_angle = motor_angle #Save angle for soft_start
 
     # Gradually move motor and dim LEDs
     update_motor_and_leds(
-        start_position=motor_angle,
-        end_position=settings.MOTOR_MID_POINT,
+        start_angle=motor_angle,
+        end_angle=settings.MOTOR_MID_POINT,
         start_brightness=round(brightness_smoothed * settings.NEOPIXEL_RANGE),
         end_brightness=0,
         total_duration=settings.SOFT_STOP_DURATION
@@ -468,19 +467,14 @@ def soft_stop():
 
     # Ensure LEDs are fully off and motor is at the midpoint
     set_pixels(off=True)
-    print("Neopixels turned off.")
     set_motor(settings.MOTOR_MID_POINT, disable=True)
-    print("Motor disabled at midpoint.")
-
     print("Soft stop completed.")
 
 
 
-
-
-start_time = time.time()
-soft_start()
-print(f"Elapsed time: {time.time() - start_time:.2f} seconds")
+# start_time = time.time()
+# soft_start()
+# print(f"Elapsed time: {time.time() - start_time:.2f} seconds")
 
 
 
