@@ -440,14 +440,10 @@ def soft_start():
 
     print("Soft start initiated...")
 
-    # Start from MOTOR_MID_POINT and move to stored start_angle
-    mid_point = settings.MOTOR_MID_POINT
-    target_angle = start_angle
-
     # Gradually increase motor position and LEDs
     update_motor_and_leds(
-        start_position=mid_point,
-        end_position=target_angle,
+        start_position=settings.MOTOR_MID_POINT,
+        end_position=start_angle,
         start_brightness=0,
         end_brightness=settings.NEOPIXEL_RANGE,
         total_duration=settings.SOFT_START_DURATION
@@ -455,21 +451,16 @@ def soft_start():
 
     print("Soft start completed.")
 
-
-
 def soft_stop():
     global motor_angle, brightness_smoothed, start_angle
 
     print("Soft stop initiated...")
 
-    # Store the current motor angle as start_angle
-    start_angle = motor_angle
-    mid_point = settings.MOTOR_MID_POINT
 
     # Gradually move motor and dim LEDs
     update_motor_and_leds(
-        start_position=start_angle,
-        end_position=mid_point,
+        start_position=motor_angle,
+        end_position=settings.MOTOR_MID_POINT,
         start_brightness=round(brightness_smoothed * settings.NEOPIXEL_RANGE),
         end_brightness=0,
         total_duration=settings.SOFT_STOP_DURATION
@@ -478,7 +469,7 @@ def soft_stop():
     # Ensure LEDs are fully off and motor is at the midpoint
     set_pixels(off=True)
     print("Neopixels turned off.")
-    set_motor(mid_point, disable=True)
+    set_motor(settings.MOTOR_MID_POINT, disable=True)
     print("Motor disabled at midpoint.")
 
     print("Soft stop completed.")
@@ -511,9 +502,8 @@ def standby():
         on_off_state = False
         send_uart("P", "0")  # Notify the Pi Zero       
         soft_stop()
-
-
-
+        set_pixels(off=True)
+        set_motor(settings.MOTOR_MID_POINT, disable=True)
 
 def wait_for_pi():
     global pi_state, pi_zero_heartbeat_time, uart_heartbeat_time, on_off_state
@@ -552,6 +542,7 @@ def wait_for_on_switch():
     while not volume_switch_state:
         time.sleep(0.1)
         send_uart("H", "Pico")
+        #print("DEBUG: Sending heartbeat")
         handle_switches()
         handle_buttons()
         time.sleep(0.2)
@@ -682,7 +673,7 @@ while True:
     # Send a heartbeat signal to the Pi Zero
     if now - uart_heartbeat_time > settings.UART_HEARTBEAT_INTERVAL:
             send_uart("H", "Pico")
-            #print("DEBUG: Sending heartbeat at", now)
+            #print("DEBUG: Sending heartbeat at:", now)
             uart_heartbeat_time = now
 
     # Go into standby if lost contact with the Pi Zero
