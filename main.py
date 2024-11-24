@@ -48,6 +48,7 @@ signal.signal(signal.SIGINT, signal_handler)
 # Variables
 clock = pygame.time.Clock()
 volume = float(0.05)
+static_volume = float(0.008)
 volume_prev = float(0.0)
 station_num = int(0)
 station_list = []
@@ -75,6 +76,9 @@ pico_heartbeat_time = 0
 uart = None
 exit_requested = False  # Add a flag to indicate whether the script should exit
 static_playback_active = False
+large_static_files = None
+static_sounds = None
+static_via_music = False
 
 # Time related
 midnight_str = time.strftime( "%m/%d/%Y" ) + " 00:00:00"
@@ -207,30 +211,53 @@ def blink_led():
 
 
 def set_volume_level(volume_level, direction=None):
-    global volume, volume_prev
-    
+    """
+    Adjust the volume level, taking into account whether music or static is playing.
+    """
+    global volume, volume_prev, static_playback_active, static_volume
+
+    # Avoid unnecessary recalculations if the volume level hasn't changed
     if volume_level == volume_prev:
         return
 
+    # Increment or decrement the volume level based on the direction
     if direction == "up":
         volume_level += settings.VOLUME_SETTINGS["step"]
     elif direction == "down":
         volume_level -= settings.VOLUME_SETTINGS["step"]
 
+    # Clamp the volume level to the defined min and max range
     volume = clamp(round(float(volume_level), 3), settings.VOLUME_SETTINGS["min"], 1)
-    pygame.mixer.music.set_volume(volume)
-    if volume > 0:
-        static_volume = max(
-            round(volume * settings.VOLUME_SETTINGS["static_volume"], 3),
-            settings.VOLUME_SETTINGS["static_min"])
-    else:
-        static_volume = 0
-    pygame.mixer.Channel(1).set_volume(static_volume)
-    #print("Volume =", volume, "Static_volume = ", static_volume)  # Debug
 
+    # Adjust the volume for music or static
+    if pygame.mixer.music.get_busy() and not static_playback_active:
+        # Music is playing
+        pygame.mixer.music.set_volume(volume)
+        #print("Adjusted just music volume")
+    else:
+        # Static playback
+        static_volume = set_static_volume()
+        if static_playback_active:
+            if pygame.mixer.music.get_busy():
+                # Static is playing via preloaded sounds
+                pygame.mixer.Channel(1).set_volume(static_volume)
+                #print("Adjusted static music volume")
+            else:
+                # Static is playing via pygame.mixer.music
+                pygame.mixer.music.set_volume(static_volume)
+                #print("Adjusted mixer music volume")
+        else:
+            # Ensure static is muted if not active
+            pygame.mixer.Channel(1).set_volume(0)
+
+    # Update the previous volume level
     volume_prev = volume_level
 
+    # Debugging output
+    #print("Volume =", volume, "Static_volume =", static_volume if static_playback_active else "N/A")
+
     return volume
+
 
 
 def clamp(number, minimum, maximum):
@@ -280,15 +307,19 @@ def check_gpio_input():
             handle_action(setup.gpio_actions[gpio])
 
 
+
 def handle_event(event):
     global on_off_state, active_station
     if event.type == pygame.QUIT:
         print("Event: Quit called")
         on_off_state = False
     elif event.type == settings.EVENTS['SONG_END']:
+        # Only handle SONG_END if it's associated with active music playback
         if active_station and active_station.state == active_station.STATES['playing']:
             print("Info: Song ended, Playing next song")
             active_station.next_song()
+        #else:
+            #print("DEBUG: Ignoring SONG_END triggered by non-music playback")
     elif event.type == settings.EVENTS['PLAYPAUSE']:
         print("Event: Play / Pause")
         active_station.pause_play()
@@ -298,12 +329,14 @@ def handle_event(event):
         print("Event:", event)
 
 
+
+
 def get_audio_length_mutagen(file_path):
     try:
         audio = mutagen.File(file_path)
         if audio is not None and hasattr(audio.info, 'length'):
             length = audio.info.length
-            print(f"CACHE: {file_path}, Length: {length}")
+            #print(f"CACHE: {file_path}, Length: {length}")
             return length
         else:
             raise ValueError(f"Mutagen could not read duration of {file_path}")
@@ -351,35 +384,52 @@ def get_radio_bands(radio_folder):
 
               
                 
-
 def handle_station_folder(sub_folder, band_name, force_rebuild=False):
     path = sub_folder.path
     station_ini_file = os.path.join(path, "station.ini")
     rebuild_needed = settings.RESET_CACHE or force_rebuild or not os.path.exists(station_ini_file)
     station_data = {}
 
+    # Normalize and sort the current .ogg files
+    current_files = sorted(os.path.basename(f).strip().lower() for f in glob.glob(os.path.join(path, "*.ogg")))
+
     if not rebuild_needed:
         try:
             station_ini_parser = configparser.ConfigParser()
             station_ini_parser.read(station_ini_file)
-            
-            if station_ini_parser.has_section('cache'):
-                station_data_str = station_ini_parser.get('cache', 'station_data')
+
+            if station_ini_parser.has_section("cache"):
+                station_data_str = station_ini_parser.get("cache", "station_data")
                 station_data = json.loads(station_data_str)
 
-                # Check if the current path matches the cached path
-                if station_data.get("path") != path:
-                    print(f"Info: Path mismatch detected for {sub_folder.name}, rebuilding cache.")
+                # Normalize and sort the cached file list
+                cached_files = sorted(os.path.basename(f).strip().lower() for f in station_data.get("station_files", []))
+
+                # Compare paths
+                cached_path = station_data.get("path")
+                if cached_path != path:
+                    print(f"DEBUG: Path mismatch in {sub_folder.name}. Cached: {cached_path}, Current: {path}")
+                    rebuild_needed = True
+
+                # Compare file lists
+                if current_files != cached_files:
+                    print(f"DEBUG: File mismatch in {sub_folder.name}.")
+                    #print(f"DEBUG: Current files ({len(current_files)}): {current_files}")
+                    #print(f"DEBUG: Cached files ({len(cached_files)}): {cached_files}")
                     rebuild_needed = True
 
         except Exception as error:
-            print(f"Error: {error}")
+            print(f"ERROR: Exception reading cache for {sub_folder.name}: {error}")
             rebuild_needed = True
 
     if rebuild_needed:
+        print(f"DEBUG: Rebuilding cache for {sub_folder.name}.")
+        #print(f"DEBUG: Rebuilding cache for {sub_folder.name}. Current files: {current_files}")
         station_data = rebuild_station_cache(path, sub_folder.name, band_name)
 
     return station_data
+
+
 
 
 
@@ -530,35 +580,49 @@ def get_nearest_station(angle):
     )
 
 
-# Play a random bit of static
 def play_static(play=None):
-    global static_sounds, volume, static_playback_active
+    """
+    Play static sound based on the state of pygame.mixer.music.
+    """
+    global static_sounds, large_static_files, static_playback_active, volume, static_via_music
 
-    # Handle stop condition
-    if play is False:
-        pygame.mixer.Channel(1).stop()
+    if play is False:  # Stop static playback
+        pygame.mixer.Channel(1).stop()  # Stop preloaded static sounds
         static_playback_active = False
+        if static_via_music:
+            pygame.mixer.music.stop()
+            pygame.event.clear(settings.EVENTS['SONG_END'])
+            static_via_music = False  # Reset static music flag
         return
 
-    # If static playback is disabled, do nothing
-    if not static_playback_active and play is None:
+    if not static_playback_active and play is None:  # Do nothing if static is disabled
         return
 
-    # Enable playback
-    if play is True:
+    if play is True:  # Enable static playback
         static_playback_active = True
 
-    # Continue playback if already playing
-    if pygame.mixer.Channel(1).get_busy():
-        return
+    if pygame.mixer.music.get_busy():  # If music is already active, use preloaded static sounds
+        if not pygame.mixer.Channel(1).get_busy():  # Play only if the channel is free
+            random_snd = random.choice(list(static_sounds.values()))
+            pygame.mixer.Channel(1).play(random_snd)
+            pygame.mixer.Channel(1).set_volume(set_static_volume())
+    else:  # If no music is active, use pygame.mixer.music for longer static files
+        if not pygame.mixer.music.get_busy() and large_static_files:
+            try:
+                random_static_file = random.choice(large_static_files)
+                pygame.mixer.music.load(random_static_file)
+                pygame.mixer.music.set_volume(set_static_volume())
+                pygame.mixer.music.play()
+                static_via_music = True  # Mark that static is being played via music
+                #print(f"DEBUG: Playing static via pygame.mixer.music: {random_static_file}")
 
-    # Start or restart playback
-    if static_playback_active:
-        random_snd = random.randrange(0, len(static_sounds))
-        pygame.mixer.Channel(1).play(static_sounds[random_snd])
-        pygame.mixer.Channel(1).set_volume(
-            max(round(volume * settings.VOLUME_SETTINGS["static_volume"], 3), settings.VOLUME_SETTINGS["static_min"])
-        )
+            except Exception as e:
+                print(f"ERROR: Failed to play static file via pygame.mixer.music: {e}")
+
+
+def set_static_volume():
+    global volume
+    return max(round(volume * settings.VOLUME_SETTINGS["static_volume"], 3), settings.VOLUME_SETTINGS["static_min"])
 
 
 
@@ -603,7 +667,7 @@ def tuning(manual=False):
     # If not near any station, play only static
     else:
         if active_station:
-            print(f"Tuning: No active station. Nearest station: #{nearest_station_num}, Angle: {station_angle}, Needle: {motor_angle}, Separation: {tuning_seperation}")
+            # print(f"Tuning: No active station. Nearest station: #{nearest_station_num}, Angle: {station_angle}, Needle: {motor_angle}, Separation: {tuning_seperation}")
             active_station.stop()
             pygame.mixer.music.stop()
             active_station = None
@@ -645,7 +709,7 @@ def prev_station():
 def select_band(new_band_num):
     global radio_band, total_station_num, tuning_seperation
     global radio_band_total, station_list, stations
-    global active_station, volume, snd_band, total_station_num
+    global active_station, volume, snd_band, total_station_num, on_off_state
 
     print(f"select_band: DEBUG: select_band called with new_band_num={new_band_num}, type={type(new_band_num)}")
 
@@ -657,6 +721,7 @@ def select_band(new_band_num):
         print("select_band: ERROR: Selected an invalid band number:", new_band_num, "/", radio_band_total)
         return
 
+    play_static(False)
     if active_station:
         active_station.stop()
         active_station = None
@@ -695,24 +760,25 @@ def select_band(new_band_num):
 
         print(f"select_band: Total stations loaded: {total_station_num}")
 
-        # Play band change sound
-        channel = pygame.mixer.Channel(4)
-        channel.play(snd_band)
-        channel.set_volume(volume * settings.VOLUME_SETTINGS["band_change"])
+        if on_off_state:
+            # Play band change sound
+            channel = pygame.mixer.Channel(4)
+            channel.play(snd_band)
+            channel.set_volume(volume * settings.VOLUME_SETTINGS["band_change"])
 
-        if settings.BAND_CALLOUT_SETTINGS["enabled"]:
-            # Audible Band callout
-            band_callout_path = os.path.join(folder_path, settings.BAND_CALLOUT_SETTINGS["file"])
-            if os.path.exists(band_callout_path):
-                band_callout_sound = pygame.mixer.Sound(band_callout_path)
-                channel = pygame.mixer.Channel(3)
-                channel.play(band_callout_sound)
-                channel.set_volume(volume * settings.VOLUME_SETTINGS["callout_volume"])
-                if settings.BAND_CALLOUT_SETTINGS["wait_for_completion"]:
-                    while channel.get_busy():  # Wait until the callout sound is finished
-                        time.sleep(0.01)
-            else:
-                print(f"select_band: ERROR: Band callout file does not exist at {band_callout_path}")
+            if settings.BAND_CALLOUT_SETTINGS["enabled"]:
+                # Audible Band callout
+                band_callout_path = os.path.join(folder_path, settings.BAND_CALLOUT_SETTINGS["file"])
+                if os.path.exists(band_callout_path):
+                    band_callout_sound = pygame.mixer.Sound(band_callout_path)
+                    channel = pygame.mixer.Channel(3)
+                    channel.play(band_callout_sound)
+                    channel.set_volume(volume * settings.VOLUME_SETTINGS["callout_volume"])
+                    if settings.BAND_CALLOUT_SETTINGS["wait_for_completion"]:
+                        while channel.get_busy():  # Wait until the callout sound is finished
+                            time.sleep(0.01)
+                else:
+                    print(f"select_band: ERROR: Band callout file does not exist at {band_callout_path}")
                 
     except IndexError:
         print(f"select_band: IndexError: new_band_num {new_band_num} is out of range of the radio_band_list.")
@@ -725,9 +791,23 @@ def select_band(new_band_num):
 def select_station(new_station_num, manual=False):
     global station_num, active_station, motor_angle, tuning_locked, stations, total_station_num
 
-    # If the station number hasn't changed and it's not a manual tune, do nothing
-    if new_station_num == station_num and not manual:
+    if new_station_num == station_num and not manual:  # If the station hasn't changed, do nothing
         return
+
+    # Suppress SONG_END events temporarily
+    pygame.mixer.music.set_endevent(pygame.NOEVENT)
+
+    # Stop any active playback and reset state
+    play_static(False)
+    pygame.mixer.music.stop()
+    pygame.mixer.Channel(1).stop()
+
+    # Clear any lingering SONG_END events from the queue
+    pygame.event.clear(settings.EVENTS['SONG_END'])
+
+    if active_station:
+        active_station.stop()
+        active_station = None
 
     # Set motor angle if manually tuning
     if manual:
@@ -739,14 +819,20 @@ def select_station(new_station_num, manual=False):
     station_num = new_station_num
     active_station = stations[station_num]
 
-    # Get the station label
-    station_name = active_station.label if hasattr(active_station, 'label') else 'Unknown'
-
     # Log the change
+    station_name = active_station.label if hasattr(active_station, 'label') else 'Unknown'
     print(f"Select_Station: '{station_name}' (Station {station_num + 1} of {total_station_num}), at angle = {motor_angle}")
+
+    # Restore SONG_END event posting for music playback
+    pygame.mixer.music.set_endevent(settings.EVENTS['SONG_END'])
+
+    # Clear any lingering events again after enabling SONG_END
+    pygame.event.clear(settings.EVENTS['SONG_END'])
 
     # Start playback for the active station
     active_station.live_playback()
+
+
 
 
 def prev_station():
@@ -1067,19 +1153,38 @@ def sweep(restore_angle):
         send_uart("C", "NoSweep")
 
 def load_static_sounds():
-    global static_sounds
-    # Static sound related
-    print("Startup: Loading static sounds (Ignore the underrun errors)")
-    static_sounds = {}
+    """
+    Load static sound files from a single folder. Preload a limited number for use with pygame.mixer.
+    """
+    global static_sounds, large_static_files
+    static_sounds = {}  # Preloaded static sounds for pygame.mixer
+    large_static_files = []  # Files for streaming via pygame.mixer.music
+
     try:
-        i = 0
-        for file in sorted(os.scandir(settings.STATIC_SOUNDS_FOLDER), key=lambda entry: entry.name):
-            if file.name.endswith(".ogg"):  # Only load .ogg files
-                static_sounds[i] = pygame.mixer.Sound(os.path.join(settings.STATIC_SOUNDS_FOLDER, file.name))
-                i += 1
-        print("Info: Loaded", len(static_sounds), "static sound files")
+        print("Startup: Loading static sounds (Ignore the underrun errors)")
+        
+        # Fetch and sort all files in the static sounds folder
+        all_static_files = sorted(
+            [f.path for f in os.scandir(settings.STATIC_SOUNDS_FOLDER) if f.name.endswith(".ogg")],
+            key=lambda f: os.path.basename(f).lower()
+        )
+
+        # Preload the first N files for mixer
+        preload_count = min(len(all_static_files), settings.STATIC_PRELOAD_NUM)
+        for i, file_path in enumerate(all_static_files[:preload_count]):
+            static_sounds[i] = pygame.mixer.Sound(file_path)
+            #print(f"Preloaded static sound: {file_path}")
+
+        # Keep the rest for large static file playback
+        large_static_files = all_static_files[preload_count:]
+        print(f"Info: Preloaded {len(static_sounds)} static sounds for pygame.mixer.")
+        print(f"Info: {len(large_static_files)} static files available for pygame.mixer.music.")
+
     except Exception as e:
         print(f"ERROR: Failed to load static sounds: {e}")
+
+
+
 
 def run():
     global clock, on_off_state, snd_on, tuning_locked, restore_angle, total_station_num
@@ -1134,7 +1239,7 @@ def run():
     print(f"Tuning: Loading saved station number {station_number}")
     # After loading settings, attempt to select the saved band and station if valid
     select_band(radio_band_number)
-    select_station(get_nearest_station(motor_angle), True)
+    #select_station(get_nearest_station(motor_angle), True)
     print("****** Radiation King Radio is now running ******")
     
     standby(True) #Go into standby at start up
@@ -1266,7 +1371,7 @@ class Radiostation:
             #  Find where in the station list we should be base on start position
             self.song_length = self.song_lengths[0]  # length of the current song
             if self.song_length and self.position > self.song_length:
-                #print("Info: Position:",round(self.position, 3),"is longer than the song length:",round(self.song_length, 3),"skipping ahead")
+                print("Info: Position:",round(self.position, 3),"is longer than the song length:",round(self.song_length, 3),"skipping ahead")
 
                 #  Skip ahead until we reach the correct time
                 while self.position > self.song_length:

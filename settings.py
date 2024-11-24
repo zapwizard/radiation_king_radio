@@ -3,7 +3,8 @@ import pygame
 # File paths
 SAVE_FILE = "saved.ini"
 STATIONS_ROOT_FOLDER = "radio/"
-STATIC_SOUNDS_FOLDER = "sounds/Static_Chunks"
+STATIC_SOUNDS_FOLDER = "sounds/STATIC_SOUNDS_FOLDER"
+STATIC_PRELOAD_NUM = 6 #Control the number of preloaded static files
 PICO_SOURCE = "pi_pico_files/"
 PICO_FOLDER_NAME = "pico"
 
@@ -18,7 +19,7 @@ VOLUME_SETTINGS = {
     "default": 0.05,
     "step": 0.008,
     "min": 0.008,
-    "static_volume": 0.15,
+    "static_volume": 0.06,
     "static_min": 0.008,
     "effects": 0.6,
     "band_change": 0.5,
@@ -47,9 +48,9 @@ RESET_CACHE = False
 
 # Radio tuning
 TUNING_SETTINGS = {
-    "near": 10, # Angular distance at which static will start playing at the same time as the station
-    "lock_on": 3, # Angular distance at which the station will play in the clear
-    "end_zone": 16, # Dead zones to ensure that a station isn't at the very ends of the dial
+    "near": 8, # Angular distance at which static will start playing at the same time as the station
+    "lock_on": 2, # Angular distance at which the station will play in the clear
+    "end_zone": 14, # Dead zones to ensure that a station isn't at the very ends of the dial
     "sweep_enabled": False, #Enable a sweeping effect at band changes
 }
 
