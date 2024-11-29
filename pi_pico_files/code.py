@@ -217,7 +217,7 @@ def check_volume_knob():
     global volume_prev, volume, volume_dead_zone, last_volume_uart_send_time
 
     # Get the raw volume setting from the potentiometer
-    volume = round(map_range(get_volume_adc(), settings.VOLUME_ADC_MIN, settings.VOLUME_ADC_MAX, 0, 1), 3)
+    volume = round(map_range(get_volume_adc(), settings.VOLUME_ADC_MIN + 1, settings.VOLUME_ADC_MAX, 0, 1), 3)
 
     # Check if the volume change is significant
     if abs(volume - volume_prev) > volume_dead_zone:
